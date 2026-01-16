@@ -69,15 +69,58 @@ main {
 
 .board-section {
     display: grid;
-    grid-template-columns: 1fr 300px;
+    grid-template-columns: 250px 1fr 300px;
     gap: 2rem;
     align-items: start;
+}
+
+@media (max-width: 1200px) {
+    .board-section {
+        grid-template-columns: 200px 1fr 280px;
+        gap: 1.5rem;
+    }
+}
+
+@media (max-width: 1000px) {
+    .board-section {
+        grid-template-columns: 1fr 300px;
+    }
+    .screenshot-preview {
+        display: none !important;
+    }
 }
 
 @media (max-width: 900px) {
     .board-section {
         grid-template-columns: 1fr;
     }
+}
+
+.screenshot-preview {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    padding: 1rem;
+    width: 100%;
+    max-width: 250px;
+    align-self: start;
+    position: sticky;
+    top: 2rem;
+}
+
+.screenshot-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    text-align: center;
+    font-weight: 600;
+}
+
+.screenshot-preview img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 2px solid var(--cell-border);
+    display: block;
 }
 
 .board-container {

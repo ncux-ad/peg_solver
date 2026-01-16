@@ -16,6 +16,13 @@
 
         <main>
             <div class="board-section">
+                <!-- Скриншот слева -->
+                <div id="screenshot-preview" class="screenshot-preview" style="display: none;">
+                    <p class="screenshot-label">📷 Загруженный скриншот:</p>
+                    <img id="screenshot-img" src="" alt="Screenshot">
+                </div>
+                
+                <!-- Доска по центру -->
                 <div class="board-container">
                     <div class="board" id="board">
                         <!-- Доска генерируется JS -->
@@ -27,6 +34,7 @@
                     </div>
                 </div>
 
+                <!-- Панель управления справа -->
                 <div class="info-panel">
                     <div class="stats">
                         <div class="stat">
@@ -62,10 +70,6 @@
                             📷 Загрузить скриншот
                             <input type="file" id="screenshot-input" accept="image/*" onchange="uploadScreenshot(event)">
                         </label>
-                        <div id="screenshot-preview" style="display: none; margin-top: 1rem;">
-                            <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Загруженный скриншот:</p>
-                            <img id="screenshot-img" src="" alt="Screenshot" style="max-width: 100%; border-radius: 8px; border: 1px solid var(--cell-border);">
-                        </div>
                     </div>
                 </div>
             </div>
