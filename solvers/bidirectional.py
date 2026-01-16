@@ -30,12 +30,25 @@ class BidirectionalSolver(BaseSolver):
     
     def solve(self, board: BitBoard, 
               target: BitBoard = None) -> Optional[List[Tuple[int, int, int]]]:
+        """
+        Решает позицию. 
+        
+        Args:
+            board: Начальная позиция
+            target: Целевая позиция (если None - любое состояние с 1 колышком)
+        """
         self.stats = SolverStats()
         
-        if target is None:
-            target = BitBoard(ENGLISH_GOAL)
+        # Если target не указан, ищем любое состояние с 1 колышком
+        # Используем специальный флаг для проверки
+        use_any_solved = target is None
         
-        self._log(f"Starting Bidirectional (start={board.peg_count()}, target={target.peg_count()})")
+        if use_any_solved:
+            # Создаём "виртуальный" target для обратного поиска
+            # На самом деле будем проверять is_solved() вместо точного совпадения
+            target = BitBoard(0)  # Пустая доска как placeholder
+        
+        self._log(f"Starting Bidirectional (start={board.peg_count()}, target={'any (1 peg)' if use_any_solved else target.peg_count()})")
         
         # Прямой поиск
         forward_queue = deque([(board, [])])
@@ -58,7 +71,7 @@ class BidirectionalSolver(BaseSolver):
             # Шаг вперёд
             if forward_queue:
                 result = self._forward_step(
-                    forward_queue, forward_visited, backward_visited
+                    forward_queue, forward_visited, backward_visited, use_any_solved
                 )
                 if result:
                     self.stats.solution_length = len(result)
@@ -68,7 +81,7 @@ class BidirectionalSolver(BaseSolver):
             # Шаг назад
             if backward_queue:
                 result = self._backward_step(
-                    backward_queue, backward_visited, forward_visited
+                    backward_queue, backward_visited, forward_visited, use_any_solved
                 )
                 if result:
                     self.stats.solution_length = len(result)
@@ -78,16 +91,28 @@ class BidirectionalSolver(BaseSolver):
         self._log(f"No solution. {self.stats}")
         return None
     
-    def _forward_step(self, queue, forward_visited, backward_visited):
+    def _forward_step(self, queue, forward_visited, backward_visited, use_any_solved=False):
         current, path = queue.popleft()
         
         for move in current.get_moves():
             new_board = current.apply_move(*move)
             new_path = path + [move]
             
-            if new_board.pegs in backward_visited:
-                backward_path = backward_visited[new_board.pegs]
-                return new_path + list(reversed(backward_path))
+            # Проверка встречи с обратным поиском
+            if use_any_solved:
+                # Проверяем, является ли состояние решённым (1 колышек)
+                if new_board.is_solved():
+                    # Любое решение найдено - возвращаем путь
+                    return new_path
+                # Также проверяем точное совпадение
+                if new_board.pegs in backward_visited:
+                    backward_path = backward_visited[new_board.pegs]
+                    return new_path + list(reversed(backward_path))
+            else:
+                # Точное совпадение с target
+                if new_board.pegs in backward_visited:
+                    backward_path = backward_visited[new_board.pegs]
+                    return new_path + list(reversed(backward_path))
             
             if new_board.pegs not in forward_visited:
                 forward_visited[new_board.pegs] = new_path
@@ -95,8 +120,12 @@ class BidirectionalSolver(BaseSolver):
         
         return None
     
-    def _backward_step(self, queue, backward_visited, forward_visited):
+    def _backward_step(self, queue, backward_visited, forward_visited, use_any_solved=False):
         current, path = queue.popleft()
+        
+        # Если use_any_solved и текущее состояние решено (1 колышек), останавливаемся
+        if use_any_solved and current.is_solved():
+            return path  # Возвращаем путь до этого состояния
         
         # Генерируем обратные ходы
         for pos in ENGLISH_VALID_POSITIONS:
@@ -111,9 +140,21 @@ class BidirectionalSolver(BaseSolver):
                     move = (from_pos, pos + dr * 7 + dc, pos)
                     new_path = path + [move]
                     
-                    if new_board.pegs in forward_visited:
-                        forward_path = forward_visited[new_board.pegs]
-                        return forward_path + list(reversed(new_path))
+                    # Проверка встречи с прямым поиском
+                    if use_any_solved:
+                        # Проверяем, является ли состояние решённым (1 колышек)
+                        if new_board.is_solved():
+                            # Любое решение найдено - возвращаем путь
+                            return new_path
+                        # Также проверяем точное совпадение
+                        if new_board.pegs in forward_visited:
+                            forward_path = forward_visited[new_board.pegs]
+                            return forward_path + list(reversed(new_path))
+                    else:
+                        # Точное совпадение с forward_visited
+                        if new_board.pegs in forward_visited:
+                            forward_path = forward_visited[new_board.pegs]
+                            return forward_path + list(reversed(new_path))
                     
                     if new_board.pegs not in backward_visited:
                         backward_visited[new_board.pegs] = new_path

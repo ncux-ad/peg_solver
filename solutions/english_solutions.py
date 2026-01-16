@@ -79,11 +79,26 @@ def get_english_solution() -> Optional[List[Tuple[int, int, int]]]:
     return compute_english_solution()
 
 
-def verify_solution(solution: List[Tuple[int, int, int]]) -> bool:
-    """Проверяет корректность решения."""
+def verify_solution(solution: List[Tuple[int, int, int]], 
+                   start_state: int = None,
+                   require_center: bool = False) -> bool:
+    """
+    Проверяет корректность решения.
+    
+    Args:
+        solution: Список ходов
+        start_state: Начальное состояние (если None - ENGLISH_START)
+        require_center: Если True - проверяет, что последний колышек в центре
+        
+    Returns:
+        True если решение корректно
+    """
     from core.bitboard import ENGLISH_START, ENGLISH_GOAL
     
-    state = ENGLISH_START
+    if start_state is None:
+        state = ENGLISH_START
+    else:
+        state = start_state
     
     for from_pos, jumped, to_pos in solution:
         # Проверки
@@ -96,7 +111,12 @@ def verify_solution(solution: List[Tuple[int, int, int]]) -> bool:
         
         state ^= (1 << from_pos) ^ (1 << jumped) ^ (1 << to_pos)
     
-    return state == ENGLISH_GOAL
+    # Проверка финального состояния
+    if require_center:
+        return state == ENGLISH_GOAL
+    else:
+        # Любой колышек в любом месте (проверяем, что остался ровно 1)
+        return bin(state).count('1') == 1
 
 
 # =====================================================
