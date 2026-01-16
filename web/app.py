@@ -19,6 +19,10 @@ from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
 from solvers import DFSSolver, BeamSolver, HybridSolver
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
+# Минимальный Pagoda вес для любой валидной позиции (для произвольных начальных состояний)
+# Цель - 1 колышек в любой позиции, поэтому нужен минимум среди всех позиций
+MIN_PAGODA_ANY_POS = min(PAGODA_WEIGHTS.values())  # Минимум = 1
+
 app = Flask(__name__)
 
 # Маппинг позиции (row, col) -> bit position
@@ -76,9 +80,14 @@ def solve():
     
     peg_count = bin(pegs_bits).count('1')
     
-    # Проверка Pagoda
+    # Проверка Pagoda для произвольных начальных состояний
+    # Цель - 1 колышек в любой валидной позиции (не обязательно центр)
     board = BitBoard(pegs_bits)
-    if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
+    pagoda_val = pagoda_value(board)
+    
+    # Для проверки решаемости: текущая Pagoda должна быть >= минимальной среди всех позиций
+    # Это мягкая проверка - более строгие проверки сделает сам решатель
+    if pagoda_val < MIN_PAGODA_ANY_POS:
         return jsonify({
             'success': False,
             'error': 'Позиция недостижима (Pagoda pruning)',
@@ -151,10 +160,13 @@ def validate():
     
     peg_count = bin(pegs_bits).count('1')
     
-    # Проверка Pagoda
+    # Проверка Pagoda для произвольных начальных состояний
     board = BitBoard(pegs_bits)
     pagoda = pagoda_value(board)
-    is_solvable = pagoda >= PAGODA_WEIGHTS[CENTER_POS]
+    
+    # Мягкая проверка: текущая Pagoda >= минимума среди всех позиций
+    # Более строгие проверки сделает решатель
+    is_solvable = pagoda >= MIN_PAGODA_ANY_POS
     
     # Проверка ходов
     moves_count = len(board.get_moves())
@@ -164,7 +176,8 @@ def validate():
         'moves_available': moves_count,
         'is_solvable': is_solvable,
         'pagoda_value': pagoda,
-        'min_pagoda': PAGODA_WEIGHTS[CENTER_POS]
+        'min_pagoda': MIN_PAGODA_ANY_POS,
+        'note': 'Цель - 1 колышек в любой валидной позиции'
     })
 
 
@@ -311,6 +324,16 @@ def recognize_board(img):
             pegs.append([cell['row'], cell['col']])
         else:
             holes.append([cell['row'], cell['col']])
+    
+    # Валидация: для английской доски должно быть 32 колышка и 1 пустое место
+    # Поддерживаем любые начальные позиции (пустое место может быть в любой валидной позиции)
+    total_cells = len(pegs) + len(holes)
+    expected_cells = 33  # Всего валидных позиций на английской доске
+    
+    if total_cells != expected_cells:
+        # Возможно, распознавание неполное - возвращаем что есть
+        # Пользователь может вручную подправить
+        pass
     
     return pegs, holes
 
