@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
-from solvers import DFSSolver, BeamSolver, HybridSolver
+from solvers import DFSSolver, BeamSolver, HybridSolver, GovernorSolver
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 # Минимальный Pagoda вес для любой валидной позиции (для произвольных начальных состояний)
@@ -99,6 +99,7 @@ def solve():
         'dfs': lambda: DFSSolver(verbose=False),
         'beam': lambda: BeamSolver(beam_width=200, verbose=False),
         'hybrid': lambda: HybridSolver(timeout=30, verbose=False),
+        'governor': lambda: GovernorSolver(timeout=120, verbose=False),
     }
     
     solver = solvers.get(solver_type, solvers['beam'])()

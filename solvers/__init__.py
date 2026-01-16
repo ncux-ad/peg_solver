@@ -19,6 +19,7 @@ from .parallel import ParallelSolver
 from .bidirectional import BidirectionalSolver
 from .hybrid import HybridSolver
 from .pattern_astar import PatternAStarSolver
+from .governor import GovernorSolver
 
 __all__ = [
     'DFSSolver',
@@ -29,5 +30,6 @@ __all__ = [
     'ParallelSolver',
     'BidirectionalSolver',
     'HybridSolver',
-    'PatternAStarSolver'
+    'PatternAStarSolver',
+    'GovernorSolver',
 ]
