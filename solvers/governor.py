@@ -15,6 +15,8 @@ from .astar import AStarSolver, IDAStarSolver
 from .beam import BeamSolver
 from .pattern_astar import PatternAStarSolver
 from .lookup import LookupSolver
+from .parallel_beam import ParallelBeamSolver
+from .parallel import ParallelSolver
 from core.bitboard import BitBoard, CENTER_POS
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
@@ -219,8 +221,16 @@ class GovernorSolver(BaseSolver):
         
         # Много колышков (> 20) или сложная позиция
         if is_hard:
-            # IDA* экономит память для сложных позиций
+            # Для очень сложных позиций используем параллельный поиск
             if peg_count > 25:
+                return {
+                    'name': 'Parallel Beam',
+                    'solver': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, verbose=False),
+                    'reason': f'Сложная позиция ({peg_count} колышков), параллельный поиск'
+                }
+            
+            # IDA* экономит память для сложных позиций
+            if peg_count > 20:
                 return {
                     'name': 'IDA*',
                     'solver': lambda: IDAStarSolver(verbose=False),

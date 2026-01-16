@@ -16,6 +16,7 @@ from .zobrist_dfs import ZobristDFSSolver
 from .astar import AStarSolver, IDAStarSolver
 from .beam import BeamSolver
 from .parallel import ParallelSolver
+from .parallel_beam import ParallelBeamSolver
 from .bidirectional import BidirectionalSolver
 from .hybrid import HybridSolver
 from .pattern_astar import PatternAStarSolver
@@ -29,6 +30,7 @@ __all__ = [
     'IDAStarSolver',
     'BeamSolver',
     'ParallelSolver',
+    'ParallelBeamSolver',
     'BidirectionalSolver',
     'HybridSolver',
     'PatternAStarSolver',
