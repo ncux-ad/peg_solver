@@ -5,13 +5,46 @@ solvers/parallel_beam.py
 """
 
 from typing import List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
-import threading
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from heuristics import pagoda_value, PAGODA_WEIGHTS
+
+
+def _evaluate_board(state_data: Tuple[int, List]) -> Tuple[float, int, List]:
+    """Оценивает состояние доски (для multiprocessing)."""
+    from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
+    from heuristics import pagoda_value, PAGODA_WEIGHTS
+    
+    pegs, path = state_data
+    board = BitBoard(pegs)
+    
+    score = board.peg_count() * 10
+    
+    # Расстояние до центра
+    for pos in ENGLISH_VALID_POSITIONS:
+        if board.has_peg(pos):
+            r, c = pos // 7, pos % 7
+            score += abs(r - 3) + abs(c - 3)
+    
+    # Мобильность
+    moves = board.get_moves()
+    score -= len(moves) * 2
+    
+    # Pagoda (мягкий)
+    min_pagoda = min(PAGODA_WEIGHTS.values())
+    current_pagoda = pagoda_value(board)
+    
+    if board.peg_count() > 15:
+        if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
+            score += 1000
+    else:
+        if current_pagoda < min_pagoda:
+            score += 1000
+    
+    return (score, pegs, path)
 
 
 class ParallelBeamSolver(BaseSolver):
@@ -75,42 +108,39 @@ class ParallelBeamSolver(BaseSolver):
                         visited: set) -> List[Tuple[float, BitBoard, List]]:
         """
         Параллельно расширяет лучшие состояния.
-        Использует ThreadPoolExecutor для параллелизма.
+        Использует ProcessPoolExecutor для настоящего параллелизма.
         """
         candidates = []
-        candidates_lock = threading.Lock()
         
-        def expand_state(state_path: Tuple[BitBoard, List]):
-            """Расширяет одно состояние и возвращает кандидатов."""
-            current, path = state_path
-            local_candidates = []
-            
+        # Подготавливаем задачи (сериализуем в int для multiprocessing)
+        tasks = []
+        for current, path in beam:
             for move in current.get_moves():
                 new_board = current.apply_move(*move)
                 key = self._get_key(new_board)
                 
-                # Проверка посещённости (с блокировкой)
-                with candidates_lock:
-                    if key in visited:
-                        continue
-                    visited.add(key)
+                # Проверка посещённости
+                if key in visited:
+                    continue
+                visited.add(key)
                 
-                score = self._evaluate(new_board)
-                local_candidates.append((score, new_board, path + [move]))
-            
-            return local_candidates
+                tasks.append((new_board.pegs, path + [move]))
         
-        # Параллельная обработка состояний в beam
-        with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-            futures = {executor.submit(expand_state, state_path): state_path 
-                      for state_path in beam}
+        if not tasks:
+            return candidates
+        
+        # Параллельная оценка (только CPU-bound операция)
+        # Используем ProcessPoolExecutor для настоящего параллелизма
+        with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
+            futures = {executor.submit(_evaluate_board, task): task for task in tasks}
             
             for future in as_completed(futures):
                 try:
-                    local_candidates = future.result()
-                    candidates.extend(local_candidates)
+                    score, pegs, path = future.result()
+                    board = BitBoard(pegs)
+                    candidates.append((score, board, path))
                 except Exception as e:
-                    self._log(f"Error in parallel expansion: {e}")
+                    self._log(f"Error in parallel evaluation: {e}")
         
         return candidates
     
