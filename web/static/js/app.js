@@ -2,8 +2,9 @@
  * Peg Solitaire Solver - Frontend
  */
 
-// Валидные позиции английской доски
-const VALID_POSITIONS = new Set([
+// Валидные позиции английской доски (для визуальной подсветки и пресетов)
+// Всё поле 7x7 теперь доступно для произвольных досок
+const ENGLISH_VALID_POSITIONS = new Set([
     '0,2', '0,3', '0,4',
     '1,2', '1,3', '1,4',
     '2,0', '2,1', '2,2', '2,3', '2,4', '2,5', '2,6',
@@ -14,7 +15,8 @@ const VALID_POSITIONS = new Set([
 ]);
 
 // Состояние
-let boardState = {}; // {row,col} -> 'peg' | 'hole'
+let boardState = {}; // {row,col} -> 'peg' | 'hole' | undefined (пусто)
+let validPositions = ENGLISH_VALID_POSITIONS; // Можно менять для разных типов досок
 let solution = null;
 let currentMoveIndex = -1;
 let isPlaying = false;
@@ -31,6 +33,7 @@ function initBoard() {
     const board = document.getElementById('board');
     board.innerHTML = '';
     
+    // Создаём полное поле 7x7 - все ячейки кликабельны
     for (let row = 0; row < 7; row++) {
         for (let col = 0; col < 7; col++) {
             const cell = document.createElement('div');
@@ -39,11 +42,15 @@ function initBoard() {
             cell.dataset.col = col;
             
             const key = `${row},${col}`;
-            if (VALID_POSITIONS.has(key)) {
-                cell.classList.add('hole');
-                cell.addEventListener('click', () => toggleCell(row, col));
+            // Все ячейки кликабельны - поддерживаем произвольные доски
+            cell.classList.add('empty'); // Начальное состояние - пусто
+            cell.addEventListener('click', () => toggleCell(row, col));
+            
+            // Визуальная индикация валидных позиций английской доски (опционально)
+            if (ENGLISH_VALID_POSITIONS.has(key)) {
+                cell.classList.add('english-valid');
             } else {
-                cell.classList.add('invalid');
+                cell.classList.add('custom-pos');
             }
             
             board.appendChild(cell);
@@ -55,13 +62,21 @@ function toggleCell(row, col) {
     const key = `${row},${col}`;
     const cell = getCell(row, col);
     
-    if (boardState[key] === 'peg') {
+    // Циклическое переключение: empty → peg → hole → empty
+    const currentState = boardState[key];
+    
+    if (currentState === 'peg') {
         boardState[key] = 'hole';
         cell.classList.remove('peg');
         cell.classList.add('hole');
+    } else if (currentState === 'hole') {
+        delete boardState[key]; // Удаляем из состояния = пусто
+        cell.classList.remove('hole', 'peg');
+        cell.classList.add('empty');
     } else {
+        // empty → peg
         boardState[key] = 'peg';
-        cell.classList.remove('hole');
+        cell.classList.remove('empty', 'hole');
         cell.classList.add('peg');
     }
     
@@ -74,24 +89,30 @@ function getCell(row, col) {
 }
 
 function clearBoard() {
-    for (const key of VALID_POSITIONS) {
-        const [row, col] = key.split(',').map(Number);
-        boardState[key] = 'hole';
-        const cell = getCell(row, col);
-        cell.classList.remove('peg');
-        cell.classList.add('hole');
+    // Очищаем всю доску 7x7
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            delete boardState[key];
+            const cell = getCell(row, col);
+            cell.classList.remove('peg', 'hole');
+            cell.classList.add('empty');
+        }
     }
     updateStats();
     hideSolution();
 }
 
 function fillBoard() {
-    for (const key of VALID_POSITIONS) {
-        const [row, col] = key.split(',').map(Number);
-        boardState[key] = 'peg';
-        const cell = getCell(row, col);
-        cell.classList.remove('hole');
-        cell.classList.add('peg');
+    // Заполняем всю доску 7x7 колышками
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            boardState[key] = 'peg';
+            const cell = getCell(row, col);
+            cell.classList.remove('empty', 'hole');
+            cell.classList.add('peg');
+        }
     }
     updateStats();
     hideSolution();
@@ -104,12 +125,26 @@ async function loadPreset(name) {
         
         clearBoard();
         
-        for (const [row, col] of data.pegs) {
+        // Загружаем колышки
+        for (const [row, col] of data.pegs || []) {
             const key = `${row},${col}`;
-            boardState[key] = 'peg';
-            const cell = getCell(row, col);
-            cell.classList.remove('hole');
-            cell.classList.add('peg');
+            if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+                boardState[key] = 'peg';
+                const cell = getCell(row, col);
+                cell.classList.remove('empty', 'hole');
+                cell.classList.add('peg');
+            }
+        }
+        
+        // Загружаем пустые места (holes) если указаны
+        for (const [row, col] of data.holes || []) {
+            const key = `${row},${col}`;
+            if (row >= 0 && row < 7 && col >= 0 && col < 7 && !boardState[key]) {
+                boardState[key] = 'hole';
+                const cell = getCell(row, col);
+                cell.classList.remove('empty', 'peg');
+                cell.classList.add('hole');
+            }
         }
         
         updateStats();
@@ -121,10 +156,13 @@ async function loadPreset(name) {
 
 function getPegs() {
     const pegs = [];
-    for (const [key, state] of Object.entries(boardState)) {
-        if (state === 'peg') {
-            const [row, col] = key.split(',').map(Number);
-            pegs.push([row, col]);
+    // Собираем все колышки со всего поля 7x7
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            if (boardState[key] === 'peg') {
+                pegs.push([row, col]);
+            }
         }
     }
     return pegs;
@@ -292,16 +330,22 @@ function clearHighlights() {
 }
 
 function renderBoard() {
-    for (const key of VALID_POSITIONS) {
-        const [row, col] = key.split(',').map(Number);
-        const cell = getCell(row, col);
-        
-        if (boardState[key] === 'peg') {
-            cell.classList.remove('hole');
-            cell.classList.add('peg');
-        } else {
-            cell.classList.remove('peg');
-            cell.classList.add('hole');
+    // Отрисовываем всё поле 7x7
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            const cell = getCell(row, col);
+            const state = boardState[key];
+            
+            cell.classList.remove('peg', 'hole', 'empty');
+            
+            if (state === 'peg') {
+                cell.classList.add('peg');
+            } else if (state === 'hole') {
+                cell.classList.add('hole');
+            } else {
+                cell.classList.add('empty');
+            }
         }
     }
 }
@@ -397,10 +441,10 @@ async function uploadScreenshot(event) {
                     
                     for (const [row, col] of data.pegs) {
                         const key = `${row},${col}`;
-                        if (VALID_POSITIONS.has(key)) {
+                        if (row >= 0 && row < 7 && col >= 0 && col < 7) {
                             boardState[key] = 'peg';
                             const cell = getCell(row, col);
-                            cell.classList.remove('hole');
+                            cell.classList.remove('empty', 'hole');
                             cell.classList.add('peg');
                         }
                     }
