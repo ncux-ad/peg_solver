@@ -207,21 +207,32 @@ def recognize_image():
 
 def recognize_board(img):
     """
-    Простое распознавание доски по изображению.
-    Ищет круглые объекты определённых цветов.
+    Распознавание доски по скриншоту.
+    Поддерживает различные приложения Peg Solitaire.
     """
-    from PIL import Image
+    from PIL import Image, ImageFilter
     
     # Преобразуем в RGB
     img = img.convert('RGB')
     width, height = img.size
     
-    # Определяем размер ячейки (предполагаем квадратную доску 7x7)
+    # Обнаруживаем область доски (ищем границы)
+    board_bounds = detect_board_bounds(img)
+    if board_bounds:
+        left, top, right, bottom = board_bounds
+        # Обрезаем до области доски
+        img = img.crop((left, top, right, bottom))
+        width, height = img.size
+    
+    # Размер ячейки
     cell_w = width / 7
     cell_h = height / 7
     
     pegs = []
     holes = []
+    
+    # Сначала собираем данные о всех ячейках
+    cell_data = []
     
     for row in range(7):
         for col in range(7):
@@ -232,12 +243,13 @@ def recognize_board(img):
             cx = int((col + 0.5) * cell_w)
             cy = int((row + 0.5) * cell_h)
             
-            # Средний цвет в области
+            # Область для анализа (центральная часть ячейки)
+            radius = int(min(cell_w, cell_h) * 0.25)
             region = img.crop((
-                max(0, cx - int(cell_w * 0.3)),
-                max(0, cy - int(cell_h * 0.3)),
-                min(width, cx + int(cell_w * 0.3)),
-                min(height, cy + int(cell_h * 0.3))
+                max(0, cx - radius),
+                max(0, cy - radius),
+                min(width, cx + radius),
+                min(height, cy + radius)
             ))
             
             # Анализируем цвет
@@ -247,16 +259,120 @@ def recognize_board(img):
                 avg_g = sum(p[1] for p in pixels) / len(pixels)
                 avg_b = sum(p[2] for p in pixels) / len(pixels)
                 
-                # Определяем по цвету (эвристика)
+                # Различные метрики
                 brightness = (avg_r + avg_g + avg_b) / 3
+                # Колышки обычно более "тёплые" (больше красного/жёлтого)
+                warmth = avg_r + avg_g * 0.5 - avg_b * 0.5
+                # Насыщенность
+                max_c = max(avg_r, avg_g, avg_b)
+                min_c = min(avg_r, avg_g, avg_b)
+                saturation = (max_c - min_c) / max_c if max_c > 0 else 0
                 
-                # Тёмный цвет = колышек, светлый = пустое
-                if brightness < 128:
-                    pegs.append([row, col])
-                else:
-                    holes.append([row, col])
+                cell_data.append({
+                    'row': row, 'col': col,
+                    'brightness': brightness,
+                    'warmth': warmth,
+                    'saturation': saturation,
+                    'r': avg_r, 'g': avg_g, 'b': avg_b
+                })
+    
+    if not cell_data:
+        return pegs, holes
+    
+    # Кластеризация: разделяем на колышки и пустые места
+    # Колышки обычно светлее и теплее
+    avg_brightness = sum(c['brightness'] for c in cell_data) / len(cell_data)
+    avg_warmth = sum(c['warmth'] for c in cell_data) / len(cell_data)
+    
+    for cell in cell_data:
+        # Комбинированная метрика
+        # Колышки: высокая яркость + тёплый цвет (бежевый/оранжевый)
+        # Пустые: низкая яркость (тёмные отверстия)
+        
+        is_peg = False
+        
+        # Для скриншота с бежевыми колышками на коричневом фоне
+        # Колышки светлее фона и теплее
+        if cell['brightness'] > avg_brightness * 0.85:
+            # Дополнительная проверка: колышки имеют характерный бежевый цвет
+            # R > G > B для бежевого
+            if cell['r'] > 150 and cell['g'] > 120 and cell['r'] >= cell['g']:
+                is_peg = True
+        
+        # Альтернативный критерий по теплоте
+        if cell['warmth'] > avg_warmth and cell['brightness'] > 100:
+            is_peg = True
+        
+        # Пустые места обычно значительно темнее
+        if cell['brightness'] < avg_brightness * 0.6:
+            is_peg = False
+        
+        if is_peg:
+            pegs.append([cell['row'], cell['col']])
+        else:
+            holes.append([cell['row'], cell['col']])
     
     return pegs, holes
+
+
+def detect_board_bounds(img):
+    """
+    Обнаруживает границы игровой доски на скриншоте.
+    """
+    from PIL import Image
+    
+    width, height = img.size
+    
+    # Для мобильных скриншотов доска обычно в центре
+    # Пропускаем UI элементы сверху и снизу
+    
+    # Ищем область с наибольшей активностью (колышки)
+    # Сканируем по вертикали
+    
+    row_activity = []
+    for y in range(height):
+        row_pixels = [img.getpixel((x, y)) for x in range(0, width, width // 20)]
+        # Считаем вариацию цвета
+        if row_pixels:
+            avg_r = sum(p[0] for p in row_pixels) / len(row_pixels)
+            variance = sum((p[0] - avg_r) ** 2 for p in row_pixels) / len(row_pixels)
+            row_activity.append(variance)
+        else:
+            row_activity.append(0)
+    
+    # Находим область с высокой активностью
+    if not row_activity:
+        return None
+    
+    max_activity = max(row_activity)
+    threshold = max_activity * 0.3
+    
+    # Находим границы
+    top = 0
+    bottom = height
+    
+    for i, act in enumerate(row_activity):
+        if act > threshold:
+            top = max(0, i - 20)
+            break
+    
+    for i in range(len(row_activity) - 1, -1, -1):
+        if row_activity[i] > threshold:
+            bottom = min(height, i + 20)
+            break
+    
+    # Для квадратной доски делаем область квадратной
+    board_height = bottom - top
+    
+    # Центрируем по горизонтали
+    left = (width - board_height) // 2
+    right = left + board_height
+    
+    if left < 0:
+        left = 0
+        right = width
+    
+    return (left, top, right, bottom)
 
 
 @app.route('/api/preset/<name>')
