@@ -99,7 +99,7 @@ def solve():
         'dfs': lambda: DFSSolver(verbose=False),
         'beam': lambda: BeamSolver(beam_width=200, verbose=False),
         'hybrid': lambda: HybridSolver(timeout=30, verbose=False),
-        'governor': lambda: GovernorSolver(timeout=120, verbose=False),
+        'governor': lambda: GovernorSolver(timeout=30, verbose=False),  # Уменьшен timeout
     }
     
     solver = solvers.get(solver_type, solvers['beam'])()

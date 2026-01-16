@@ -6,6 +6,8 @@ Governor (Диспетчер) — умный выбор алгоритма на 
 
 from typing import List, Tuple, Optional
 import time
+import signal
+import threading
 
 from .base import BaseSolver, SolverStats
 from .dfs import DFSSolver
@@ -49,9 +51,20 @@ class GovernorSolver(BaseSolver):
         chosen_solver = self._choose_solver(analysis)
         self._log(f"→ Chosen: {chosen_solver['name']} ({chosen_solver['reason']})")
         
-        # Запуск выбранного алгоритма
+        # Запуск выбранного алгоритма с timeout
         try:
-            solution = chosen_solver['solver']().solve(board)
+            solver_instance = chosen_solver['solver']()
+            
+            # Проверяем timeout перед запуском
+            if time.time() - start_time > self.timeout:
+                self._log(f"Timeout before starting ({self.timeout}s)")
+                return self._try_fallbacks(board, analysis, chosen_solver['name'], start_time)
+            
+            # Устанавливаем локальный timeout для конкретного решателя (меньше общего)
+            solver_timeout = min(self.timeout * 0.7, 30.0)  # 70% от общего или 30 сек
+            
+            # Запускаем с проверкой timeout
+            solution = self._solve_with_timeout(solver_instance, board, solver_timeout, start_time)
             
             if solution:
                 self.stats.time_elapsed = time.time() - start_time
@@ -60,7 +73,7 @@ class GovernorSolver(BaseSolver):
                 return solution
             else:
                 # Fallback: пробуем другие алгоритмы
-                self._log("Primary solver failed, trying fallbacks...")
+                self._log("Primary solver failed or timed out, trying fallbacks...")
                 return self._try_fallbacks(board, analysis, chosen_solver['name'], start_time)
                 
         except Exception as e:
@@ -111,6 +124,35 @@ class GovernorSolver(BaseSolver):
         
         return total_dist / count if count > 0 else 0.0
     
+    def _solve_with_timeout(self, solver, board: BitBoard, timeout: float, start_time: float) -> Optional[List]:
+        """
+        Запускает решатель с проверкой timeout.
+        Использует threading для контроля времени выполнения.
+        """
+        result = [None]  # Список для хранения результата из другого потока
+        exception = [None]
+        
+        def solve_worker():
+            try:
+                result[0] = solver.solve(board)
+            except Exception as e:
+                exception[0] = e
+        
+        thread = threading.Thread(target=solve_worker, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout)
+        
+        if thread.is_alive():
+            # Поток всё ещё работает - timeout
+            self._log(f"Timeout: solver exceeded {timeout:.1f}s")
+            # Не можем убить поток, но можем продолжить
+            return None
+        
+        if exception[0]:
+            raise exception[0]
+        
+        return result[0]
+    
     def _choose_solver(self, analysis: dict) -> dict:
         """
         Выбирает оптимальный алгоритм на основе анализа.
@@ -125,7 +167,8 @@ class GovernorSolver(BaseSolver):
         is_hard = analysis['is_hard']
         
         # Мало колышков (< 10) → DFS (быстрое исчерпывающее решение)
-        if peg_count < 10:
+        # НО: только если не слишком сложная позиция
+        if peg_count < 10 and not is_hard:
             return {
                 'name': 'DFS',
                 'solver': lambda: DFSSolver(verbose=False),
@@ -178,11 +221,13 @@ class GovernorSolver(BaseSolver):
                 'reason': f'Сложная позиция ({peg_count} колышков), широкий луч'
             }
         
-        # По умолчанию: Beam Search (универсальный)
+        # По умолчанию: Beam Search (универсальный, быстрый)
+        # Избегаем DFS для больших позиций - он может работать очень долго
+        beam_width = 300 if peg_count > 25 else 200
         return {
             'name': 'Beam Search',
-            'solver': lambda: BeamSolver(beam_width=200, verbose=False),
-            'reason': 'Универсальный выбор'
+            'solver': lambda: BeamSolver(beam_width=beam_width, verbose=False),
+            'reason': f'Универсальный выбор (beam_width={beam_width})'
         }
     
     def _try_fallbacks(self, board: BitBoard, analysis: dict, failed_solver: str, start_time: float) -> Optional[List]:
@@ -190,7 +235,8 @@ class GovernorSolver(BaseSolver):
         fallbacks = []
         
         # Формируем список fallback'ов
-        if failed_solver != 'DFS':
+        # Избегаем DFS для больших позиций (> 15 колышков) - он слишком медленный
+        if failed_solver != 'DFS' and analysis['peg_count'] < 15:
             fallbacks.append(('DFS', lambda: DFSSolver(verbose=False)))
         
         if failed_solver not in ['Beam Search', 'Beam Search (wide)']:
@@ -218,7 +264,19 @@ class GovernorSolver(BaseSolver):
             self._log(f"Trying fallback: {name}...")
             
             try:
-                solution = solver_fn().solve(board)
+                # Проверяем оставшееся время
+                remaining_time = self.timeout - (time.time() - start_time)
+                if remaining_time <= 0:
+                    self._log(f"Timeout reached, stopping fallbacks")
+                    return None
+                
+                # Используем timeout для каждого fallback'а
+                solver_instance = solver_fn()
+                solution = self._solve_with_timeout(
+                    solver_instance, board, 
+                    min(remaining_time, 20.0),  # Максимум 20 сек на fallback
+                    start_time
+                )
                 if solution:
                     self.stats.time_elapsed = time.time() - start_time
                     self.stats.solution_length = len(solution)
