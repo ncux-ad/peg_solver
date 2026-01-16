@@ -1,0 +1,174 @@
+"""
+core/bitboard.py
+
+Сверхбыстрое представление доски через битовые маски.
+Для английской доски (33 позиции) — один 64-bit int.
+"""
+
+from typing import List, Tuple, Optional
+from functools import lru_cache
+
+# Валидные позиции английской доски (33 клетки)
+ENGLISH_VALID_POSITIONS = frozenset([
+    2, 3, 4, 9, 10, 11,
+    14, 15, 16, 17, 18, 19, 20,
+    21, 22, 23, 24, 25, 26, 27,
+    28, 29, 30, 31, 32, 33, 34,
+    37, 38, 39, 44, 45, 46
+])
+
+VALID_MASK = sum(1 << pos for pos in ENGLISH_VALID_POSITIONS)
+CENTER_POS = 24
+ENGLISH_START = VALID_MASK ^ (1 << CENTER_POS)
+ENGLISH_GOAL = 1 << CENTER_POS
+
+
+def pos_to_coords(pos: int) -> Tuple[int, int]:
+    """Линейная позиция → (row, col)."""
+    return pos // 7, pos % 7
+
+
+def coords_to_pos(row: int, col: int) -> int:
+    """(row, col) → линейная позиция."""
+    return row * 7 + col
+
+
+class BitBoard:
+    """Битовое представление доски Peg Solitaire."""
+    __slots__ = ('pegs', '_hash', '_count')
+
+    def __init__(self, pegs: int):
+        self.pegs = pegs
+        self._hash = hash(pegs)
+        self._count = bin(pegs).count('1')
+
+    @classmethod
+    def english_start(cls) -> 'BitBoard':
+        """Стандартная английская доска."""
+        return cls(ENGLISH_START)
+
+    @classmethod
+    def english_goal(cls) -> 'BitBoard':
+        """Целевое состояние (1 колышек в центре)."""
+        return cls(ENGLISH_GOAL)
+
+    @classmethod
+    def from_positions(cls, positions: List[Tuple[int, int]]) -> 'BitBoard':
+        """Создаёт доску из списка координат."""
+        pegs = 0
+        for row, col in positions:
+            pegs |= (1 << coords_to_pos(row, col))
+        return cls(pegs)
+
+    def peg_count(self) -> int:
+        return self._count
+
+    def has_peg(self, pos: int) -> bool:
+        return bool(self.pegs & (1 << pos))
+
+    def get_moves(self) -> List[Tuple[int, int, int]]:
+        """Генерирует все допустимые ходы: (from, jumped, to)."""
+        moves = []
+        pegs = self.pegs
+        holes = VALID_MASK & ~pegs
+
+        # Горизонтальные
+        can_right = pegs & (pegs >> 1) & (holes >> 2)
+        can_left = pegs & (pegs << 1) & (holes << 2)
+        for pos in ENGLISH_VALID_POSITIONS:
+            if can_right & (1 << pos) and pos % 7 <= 4:
+                moves.append((pos, pos + 1, pos + 2))
+            if can_left & (1 << pos) and pos % 7 >= 2:
+                moves.append((pos, pos - 1, pos - 2))
+
+        # Вертикальные
+        can_down = pegs & (pegs >> 7) & (holes >> 14)
+        can_up = pegs & (pegs << 7) & (holes << 14)
+        for pos in ENGLISH_VALID_POSITIONS:
+            if can_down & (1 << pos) and pos // 7 <= 4:
+                to = pos + 14
+                if to in ENGLISH_VALID_POSITIONS:
+                    moves.append((pos, pos + 7, to))
+            if can_up & (1 << pos) and pos // 7 >= 2:
+                to = pos - 14
+                if to in ENGLISH_VALID_POSITIONS:
+                    moves.append((pos, pos - 7, to))
+
+        return moves
+
+    def apply_move(self, from_pos: int, jumped: int, to_pos: int) -> 'BitBoard':
+        """Применяет ход — O(1) XOR операции."""
+        new_pegs = self.pegs ^ (1 << from_pos) ^ (1 << jumped) ^ (1 << to_pos)
+        return BitBoard(new_pegs)
+
+    def is_solved(self) -> bool:
+        return self._count == 1
+
+    def is_goal(self) -> bool:
+        return self.pegs == ENGLISH_GOAL
+
+    def is_dead(self) -> bool:
+        return self._count > 1 and len(self.get_moves()) == 0
+
+    def canonical(self) -> 'BitBoard':
+        """Каноническая форма (минимальная из 8 симметрий)."""
+        variants = [self]
+        current = self
+        for _ in range(3):
+            current = current._rotate_90()
+            variants.append(current)
+        flipped = self._flip_h()
+        variants.append(flipped)
+        current = flipped
+        for _ in range(3):
+            current = current._rotate_90()
+            variants.append(current)
+        return min(variants, key=lambda b: b.pegs)
+
+    def _rotate_90(self) -> 'BitBoard':
+        new_pegs = 0
+        for pos in ENGLISH_VALID_POSITIONS:
+            if self.pegs & (1 << pos):
+                r, c = pos // 7, pos % 7
+                nr, nc = c, 6 - r
+                new_pos = nr * 7 + nc
+                if new_pos in ENGLISH_VALID_POSITIONS:
+                    new_pegs |= (1 << new_pos)
+        return BitBoard(new_pegs)
+
+    def _flip_h(self) -> 'BitBoard':
+        new_pegs = 0
+        for pos in ENGLISH_VALID_POSITIONS:
+            if self.pegs & (1 << pos):
+                r, c = pos // 7, pos % 7
+                new_pos = r * 7 + (6 - c)
+                if new_pos in ENGLISH_VALID_POSITIONS:
+                    new_pegs |= (1 << new_pos)
+        return BitBoard(new_pegs)
+
+    def to_string(self) -> str:
+        lines = []
+        for r in range(7):
+            row = ""
+            for c in range(7):
+                pos = r * 7 + c
+                if pos not in ENGLISH_VALID_POSITIONS:
+                    row += "  "
+                elif self.has_peg(pos):
+                    row += "● "
+                else:
+                    row += "○ "
+            lines.append(row)
+        return "\n".join(lines)
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, BitBoard) and self.pegs == other.pegs
+
+    def __lt__(self, other: 'BitBoard') -> bool:
+        return self.pegs < other.pegs
+
+    def __repr__(self) -> str:
+        return f"BitBoard({self._count} pegs)"
