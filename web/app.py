@@ -197,7 +197,6 @@ def recognize_image():
     
     try:
         from PIL import Image
-        import numpy as np
         
         if 'image' in request.files:
             image_file = request.files['image']
@@ -253,10 +252,9 @@ def recognize_board(img):
     # Сначала собираем данные о всех ячейках
     cell_data = []
     
+    # Обрабатываем все позиции на поле 7x7 (поддержка произвольных досок)
     for row in range(7):
         for col in range(7):
-            if (row, col) not in VALID_COORDS:
-                continue
             
             # Центр ячейки
             cx = int((col + 0.5) * cell_w)
