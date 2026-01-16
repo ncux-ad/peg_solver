@@ -44,6 +44,15 @@ class GovernorSolver(BaseSolver):
         peg_count = board.peg_count()
         self._log(f"Governor: Analyzing position (pegs={peg_count})...")
         
+        # Сначала проверяем Lookup (быстро для известных позиций)
+        lookup_solver = LookupSolver(use_fallback=False, verbose=False)
+        solution = lookup_solver.solve(board)
+        if solution:
+            self.stats.time_elapsed = time.time() - start_time
+            self.stats.solution_length = len(solution)
+            self._log(f"✓ Found in DB! ({len(solution)} moves, {self.stats.time_elapsed:.3f}s)")
+            return solution
+        
         # Анализ позиции
         analysis = self._analyze_position(board)
         self._log(f"Analysis: {analysis}")
