@@ -409,29 +409,60 @@ def recognize_board(img):
             best_variance = total_variance
             best_threshold = threshold
     
-    # Классификация ячеек
+    # Классификация ячеек с улучшенной логикой для коричневой доски
+    # Колышки: светлые коричневые круглые объекты (яркие, тёплые)
+    # Пустые: тёмные круглые отверстия (очень тёмные, низкая яркость)
+    
+    # Сортируем ячейки по яркости для адаптивного порога
+    sorted_by_brightness = sorted(cell_data, key=lambda x: x['brightness'])
+    
+    # Используем перцентили для определения порогов
+    # Самые светлые 60-70% - потенциальные колышки
+    # Самые тёмные 10-20% - потенциальные пустые
+    light_threshold_idx = int(len(sorted_by_brightness) * 0.3)
+    dark_threshold_idx = int(len(sorted_by_brightness) * 0.85)
+    
+    light_threshold = sorted_by_brightness[light_threshold_idx]['brightness']
+    dark_threshold = sorted_by_brightness[dark_threshold_idx]['brightness'] if dark_threshold_idx < len(sorted_by_brightness) else bg_brightness * 0.7
+    
     for cell in cell_data:
-        is_peg = cell['score'] >= best_threshold
+        is_peg = False
+        is_hole = False
         
-        # Дополнительные проверки для уменьшения ложных срабатываний
-        # Колышки должны быть светлее фона
-        if cell['brightness'] < bg_brightness * 0.9:
-            is_peg = False
+        # Критерии для колышка (светлый коричневый объект):
+        # 1. Яркость выше среднего порога
+        # 2. Тёплый цвет (R, G высокие)
+        # 3. Контраст с фоном
+        # 4. Блик в центре (3D форма)
         
-        # Колышки должны иметь минимальный контраст
-        if cell['contrast_with_bg'] < 20:
-            is_peg = False
+        if cell['brightness'] >= light_threshold:
+            # Проверяем тёплый цвет (коричневый/бежевый колышек)
+            if cell['r'] > 100 and cell['g'] > 80:
+                # Есть контраст с фоном
+                if cell['contrast_with_bg'] > 15:
+                    # Есть блик в центре (3D форма колышка)
+                    if cell['center_highlight'] > -5:  # Может быть небольшой блик
+                        is_peg = True
         
-        # Если очень тёмная ячейка - точно не колышек
-        if cell['brightness'] < bg_brightness * 0.6:
-            is_peg = False
+        # Дополнительная проверка: очень светлые ячейки с хорошим контрастом
+        if cell['brightness'] > bg_brightness * 1.15 and cell['contrast_with_bg'] > 25:
+            is_peg = True
         
+        # Критерии для пустого места (тёмное отверстие):
+        # 1. Очень низкая яркость
+        # 2. Темнее фона
+        # 3. Низкий контраст с фоном (т.к. это отверстие в фоне)
+        
+        if cell['brightness'] <= dark_threshold:
+            if cell['brightness'] < bg_brightness * 0.75:
+                is_hole = True
+        
+        # Убеждаемся, что не противоречат друг другу
         if is_peg:
             pegs.append([cell['row'], cell['col']])
-        else:
-            # Добавляем в holes только если это не просто фон
-            if cell['brightness'] < bg_brightness * 1.1:  # Примерно фон или темнее
-                holes.append([cell['row'], cell['col']])
+        elif is_hole:
+            holes.append([cell['row'], cell['col']])
+        # Иначе - фон, игнорируем
     
     # Валидация: для английской доски должно быть 32 колышка и 1 пустое место
     # Поддерживаем любые начальные позиции (пустое место может быть в любой валидной позиции)
@@ -448,60 +479,129 @@ def recognize_board(img):
 
 def detect_board_bounds(img):
     """
-    Обнаруживает границы игровой доски на скриншоте.
+    Улучшенное обнаружение границ игровой доски на скриншоте.
+    Ищет коричневую деревянную область с круглыми объектами.
     """
     from PIL import Image
     
     width, height = img.size
     
-    # Для мобильных скриншотов доска обычно в центре
-    # Пропускаем UI элементы сверху и снизу
+    # Для мобильных скриншотов доска обычно в центральной части
+    # Ищем коричневую область (R и G высокие, B низкий)
     
-    # Ищем область с наибольшей активностью (колышки)
-    # Сканируем по вертикали
+    # Определяем цвет фона UI (обычно тёмный вверху/внизу)
+    top_bg = [img.getpixel((x, height // 20)) for x in range(0, width, width // 10)]
+    bottom_bg = [img.getpixel((x, height - height // 20)) for x in range(0, width, width // 10)]
     
-    row_activity = []
+    ui_bg_brightness = []
+    for pixels in [top_bg, bottom_bg]:
+        for p in pixels:
+            ui_bg_brightness.append((p[0] + p[1] + p[2]) / 3)
+    
+    ui_bg_avg = sum(ui_bg_brightness) / len(ui_bg_brightness) if ui_bg_brightness else 50
+    
+    # Ищем коричневую область доски (теплый цвет, средняя яркость)
+    row_scores = []
     for y in range(height):
-        row_pixels = [img.getpixel((x, y)) for x in range(0, width, width // 20)]
-        # Считаем вариацию цвета
+        row_pixels = [img.getpixel((x, y)) for x in range(0, width, max(1, width // 30))]
         if row_pixels:
+            # Анализируем цвет - коричневая доска имеет высокие R и G
             avg_r = sum(p[0] for p in row_pixels) / len(row_pixels)
+            avg_g = sum(p[1] for p in row_pixels) / len(row_pixels)
+            avg_b = sum(p[2] for p in row_pixels) / len(row_pixels)
+            brightness = (avg_r + avg_g + avg_b) / 3
+            
+            # Коричневый = высокие R, G, средний B, средняя яркость
+            # Теплота = R + G - B
+            warmth = avg_r + avg_g - avg_b
+            
+            # Счёт для коричневой области (не слишком тёмная, не слишком светлая)
+            score = 0
+            if 80 < brightness < 200:  # Средняя яркость
+                score += 1
+            if warmth > 50:  # Тёплый цвет
+                score += 1
+            if avg_r > avg_b and avg_g > avg_b:  # Коричневый оттенок
+                score += 1
+            
+            # Вариация (на доске есть объекты)
             variance = sum((p[0] - avg_r) ** 2 for p in row_pixels) / len(row_pixels)
-            row_activity.append(variance)
+            if variance > 200:  # Есть вариация (колышки)
+                score += 1
+            
+            row_scores.append(score)
         else:
-            row_activity.append(0)
+            row_scores.append(0)
     
-    # Находим область с высокой активностью
-    if not row_activity:
+    if not row_scores:
         return None
     
-    max_activity = max(row_activity)
-    threshold = max_activity * 0.3
+    # Находим область с максимальным счётом
+    max_score = max(row_scores)
+    threshold = max_score * 0.5
     
-    # Находим границы
-    top = 0
-    bottom = height
+    # Находим границы по вертикали
+    top = None
+    bottom = None
     
-    for i, act in enumerate(row_activity):
-        if act > threshold:
-            top = max(0, i - 20)
+    for i, score in enumerate(row_scores):
+        if score >= threshold:
+            top = max(0, i - 5)
             break
     
-    for i in range(len(row_activity) - 1, -1, -1):
-        if row_activity[i] > threshold:
-            bottom = min(height, i + 20)
+    for i in range(len(row_scores) - 1, -1, -1):
+        if row_scores[i] >= threshold:
+            bottom = min(height, i + 5)
             break
     
-    # Для квадратной доски делаем область квадратной
-    board_height = bottom - top
+    if top is None or bottom is None:
+        # Fallback: берём центральные 70% изображения
+        top = int(height * 0.15)
+        bottom = int(height * 0.85)
     
-    # Центрируем по горизонтали
-    left = (width - board_height) // 2
-    right = left + board_height
+    # Аналогично по горизонтали
+    col_scores = []
+    for x in range(width):
+        col_pixels = [img.getpixel((x, y)) for y in range(top, bottom, max(1, (bottom - top) // 20))]
+        if col_pixels:
+            avg_r = sum(p[0] for p in col_pixels) / len(col_pixels)
+            avg_g = sum(p[1] for p in col_pixels) / len(col_pixels)
+            brightness = (sum(p[0] + p[1] + p[2] for p in col_pixels) / 3) / len(col_pixels)
+            warmth = avg_r + avg_g - sum(p[2] for p in col_pixels) / len(col_pixels)
+            
+            score = 0
+            if 80 < brightness < 200:
+                score += 1
+            if warmth > 50:
+                score += 1
+            
+            col_scores.append(score)
+        else:
+            col_scores.append(0)
     
-    if left < 0:
-        left = 0
-        right = width
+    max_col_score = max(col_scores) if col_scores else 0
+    col_threshold = max_col_score * 0.5
+    
+    left = None
+    right = None
+    
+    for i, score in enumerate(col_scores):
+        if score >= col_threshold:
+            left = max(0, i - 5)
+            break
+    
+    for i in range(len(col_scores) - 1, -1, -1):
+        if col_scores[i] >= col_threshold:
+            right = min(width, i + 5)
+            break
+    
+    if left is None or right is None:
+        # Fallback: центрируем по горизонтали
+        board_height = bottom - top
+        left = (width - board_height) // 2
+        right = left + board_height
+        left = max(0, left)
+        right = min(width, right)
     
     return (left, top, right, bottom)
 
