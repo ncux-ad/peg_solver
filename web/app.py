@@ -66,11 +66,15 @@ def solve():
     solver_type = data.get('solver', 'beam')
     
     # Конвертируем в битовую маску
+    # Поддерживаем произвольные позиции на поле 7x7
     pegs_bits = 0
     for row, col in pegs_coords:
-        pos = coords_to_bit(row, col)
-        if pos in ENGLISH_VALID_POSITIONS:
-            pegs_bits |= (1 << pos)
+        if 0 <= row < 7 and 0 <= col < 7:
+            pos = coords_to_bit(row, col)
+            # Принимаем все позиции на поле 7x7 (0-48)
+            # Валидация английской доски будет проверена позже через Pagoda
+            if 0 <= pos < 49:
+                pegs_bits |= (1 << pos)
     
     if pegs_bits == 0:
         return jsonify({
@@ -155,9 +159,10 @@ def validate():
     
     pegs_bits = 0
     for row, col in pegs_coords:
-        pos = coords_to_bit(row, col)
-        if pos in ENGLISH_VALID_POSITIONS:
-            pegs_bits |= (1 << pos)
+        if 0 <= row < 7 and 0 <= col < 7:
+            pos = coords_to_bit(row, col)
+            if 0 <= pos < 49:
+                pegs_bits |= (1 << pos)
     
     peg_count = bin(pegs_bits).count('1')
     
