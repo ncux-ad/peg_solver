@@ -22,6 +22,10 @@ let currentMoveIndex = -1;
 let isPlaying = false;
 let playInterval = null;
 let initialBoardState = null; // для воспроизведения
+let screenshotImageData = null; // Данные загруженного скриншота
+let trainingMode = false; // Режим обучения
+let pegSamples = []; // Примеры колышков [[row, col], ...]
+let holeSamples = []; // Примеры пустых мест [[row, col], ...]
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
@@ -424,27 +428,44 @@ async function uploadScreenshot(event) {
     // Показываем превью скриншота
     const preview = document.getElementById('screenshot-preview');
     const img = document.getElementById('screenshot-img');
+    const actions = document.getElementById('screenshot-actions');
     const reader = new FileReader();
     
+    // Сбрасываем режим обучения
+    trainingMode = false;
+    pegSamples = [];
+    holeSamples = [];
+    
     reader.onload = function(e) {
+        screenshotImageData = e.target.result;
         img.src = e.target.result;
         preview.style.display = 'block';
+        actions.style.display = 'block';
         
-        // Отправляем на распознавание
+        // Убираем старые обработчики
+        img.onclick = null;
+        
+        // Отправляем на автоматическое распознавание
         recognizeScreenshot(e.target.result);
     };
     
     reader.readAsDataURL(file);
 }
 
-async function recognizeScreenshot(imageData) {
+async function recognizeScreenshot(imageData, useSamples = false) {
     const loading = document.getElementById('loading');
     
     try {
+        const requestData = { image_data: imageData };
+        if (useSamples && (pegSamples.length > 0 || holeSamples.length > 0)) {
+            requestData.pegs_samples = pegSamples;
+            requestData.holes_samples = holeSamples;
+        }
+        
         const response = await fetch('/api/recognize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image_data: imageData })
+            body: JSON.stringify(requestData)
         });
         
         const data = await response.json();
@@ -464,7 +485,10 @@ async function recognizeScreenshot(imageData) {
             }
             
             updateStats();
-            alert(`Распознано ${data.peg_count} колышков`);
+            const msg = useSamples ? 
+                `Распознано с примерами: ${data.peg_count} колышков` :
+                `Распознано: ${data.peg_count} колышков. Если неверно - используйте режим обучения.`;
+            alert(msg);
         } else {
             alert(`Ошибка: ${data.error}`);
         }
@@ -475,4 +499,91 @@ async function recognizeScreenshot(imageData) {
         loading.style.display = 'none';
         loading.querySelector('p').textContent = 'Поиск решения...';
     }
+}
+
+function startTrainingMode() {
+    trainingMode = true;
+    pegSamples = [];
+    holeSamples = [];
+    
+    const img = document.getElementById('screenshot-img');
+    const modeDiv = document.getElementById('screenshot-mode');
+    const statusSpan = document.getElementById('mode-status');
+    const recognizeBtn = document.getElementById('recognize-samples-btn');
+    
+    modeDiv.style.display = 'block';
+    statusSpan.textContent = `Колышков: ${pegSamples.length}, Пустых: ${holeSamples.length}`;
+    recognizeBtn.style.display = 'none';
+    
+    img.onclick = function(e) {
+        if (!trainingMode) return;
+        
+        const rect = img.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Преобразуем координаты клика в координаты доски 7x7
+        const imgWidth = img.naturalWidth || img.width;
+        const imgHeight = img.naturalHeight || img.height;
+        const scaleX = imgWidth / rect.width;
+        const scaleY = imgHeight / rect.height;
+        
+        const imgX = x * scaleX;
+        const imgY = y * scaleY;
+        
+        // Определяем границы доски (предполагаем квадратную область в центре)
+        const boardSize = Math.min(imgWidth, imgHeight) * 0.7; // 70% размера
+        const boardLeft = (imgWidth - boardSize) / 2;
+        const boardTop = (imgHeight - boardSize) / 2;
+        
+        const cellSize = boardSize / 7;
+        const col = Math.floor((imgX - boardLeft) / cellSize);
+        const row = Math.floor((imgY - boardTop) / cellSize);
+        
+        if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+            // Переключаем режим: левый клик = колышек, правый = пустое
+            if (e.button === 0 || !e.button) { // Левая кнопка
+                // Добавляем/удаляем пример колышка
+                const idx = pegSamples.findIndex(([r, c]) => r === row && c === col);
+                if (idx >= 0) {
+                    pegSamples.splice(idx, 1);
+                } else {
+                    pegSamples.push([row, col]);
+                    // Убираем из пустых, если был
+                    holeSamples = holeSamples.filter(([r, c]) => !(r === row && c === col));
+                }
+            } else if (e.button === 2) { // Правая кнопка
+                const idx = holeSamples.findIndex(([r, c]) => r === row && c === col);
+                if (idx >= 0) {
+                    holeSamples.splice(idx, 1);
+                } else {
+                    holeSamples.push([row, col]);
+                    pegSamples = pegSamples.filter(([r, c]) => !(r === row && c === col));
+                }
+            }
+            
+            statusSpan.textContent = `Колышков: ${pegSamples.length}, Пустых: ${holeSamples.length}`;
+            
+            if (pegSamples.length > 0 || holeSamples.length > 0) {
+                recognizeBtn.style.display = 'inline-block';
+            }
+        }
+    };
+    
+    img.oncontextmenu = function(e) {
+        e.preventDefault(); // Блокируем контекстное меню
+        return false;
+    };
+    
+    alert('Режим обучения:\n• Левый клик на скриншоте = отметить колышек\n• Правый клик = отметить пустое место\n• Клик ещё раз = снять отметку\n• Затем нажмите "Распознать с примерами"');
+}
+
+function recognizeWithSamples() {
+    if (!screenshotImageData) return;
+    
+    const loading = document.getElementById('loading');
+    loading.querySelector('p').textContent = 'Распознавание с примерами...';
+    loading.style.display = 'flex';
+    
+    recognizeScreenshot(screenshotImageData, true);
 }

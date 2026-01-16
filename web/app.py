@@ -191,6 +191,9 @@ def validate():
 def recognize_image():
     """
     Распознавание позиции по скриншоту.
+    Поддерживает два режима:
+    1. Автоматическое распознавание (без examples)
+    2. Обучение на примерах (с examples: pegs_samples, holes_samples)
     """
     if 'image' not in request.files and 'image_data' not in request.json:
         return jsonify({'success': False, 'error': 'Изображение не предоставлено'})
@@ -207,8 +210,16 @@ def recognize_image():
             image_bytes = base64.b64decode(image_data.split(',')[1])
             img = Image.open(io.BytesIO(image_bytes))
         
-        # Простое распознавание по цветам
-        pegs, holes = recognize_board(img)
+        # Проверяем, есть ли примеры для обучения
+        pegs_samples = request.json.get('pegs_samples', [])  # [[row, col], ...]
+        holes_samples = request.json.get('holes_samples', [])  # [[row, col], ...]
+        
+        if pegs_samples or holes_samples:
+            # Режим обучения на примерах - более точный
+            pegs, holes = recognize_board_with_samples(img, pegs_samples, holes_samples)
+        else:
+            # Автоматическое распознавание (старый алгоритм)
+            pegs, holes = recognize_board(img)
         
         return jsonify({
             'success': True,
@@ -217,10 +228,140 @@ def recognize_image():
             'peg_count': len(pegs)
         })
     except Exception as e:
+        import traceback
         return jsonify({
             'success': False,
-            'error': f'Ошибка распознавания: {str(e)}'
+            'error': f'Ошибка распознавания: {str(e)}\n{traceback.format_exc()}'
         })
+
+
+def recognize_board_with_samples(img, pegs_samples, holes_samples):
+    """
+    Распознавание доски на основе примеров от пользователя.
+    Использует примеры колышков и пустых мест для обучения простого классификатора.
+    """
+    from PIL import Image
+    
+    img = img.convert('RGB')
+    width, height = img.size
+    
+    # Обнаруживаем область доски
+    board_bounds = detect_board_bounds(img)
+    if board_bounds:
+        left, top, right, bottom = board_bounds
+        img = img.crop((left, top, right, bottom))
+        width, height = img.size
+    
+    cell_w = width / 7
+    cell_h = height / 7
+    
+    # Собираем характеристики примеров
+    peg_features = []
+    hole_features = []
+    
+    def get_cell_features(row, col):
+        """Извлекает характеристики ячейки."""
+        cx = int((col + 0.5) * cell_w)
+        cy = int((row + 0.5) * cell_h)
+        radius = int(min(cell_w, cell_h) * 0.35)
+        
+        # Берём большую выборку точек
+        sample_points = []
+        for dx in range(-radius, radius + 1, max(1, radius // 3)):
+            for dy in range(-radius, radius + 1, max(1, radius // 3)):
+                px, py = cx + dx, cy + dy
+                if 0 <= px < width and 0 <= py < height:
+                    sample_points.append(img.getpixel((px, py)))
+        
+        if not sample_points:
+            return None
+        
+        # Метрики
+        avg_r = sum(p[0] for p in sample_points) / len(sample_points)
+        avg_g = sum(p[1] for p in sample_points) / len(sample_points)
+        avg_b = sum(p[2] for p in sample_points) / len(sample_points)
+        brightness = (avg_r + avg_g + avg_b) / 3
+        
+        # Центральная точка
+        center_r, center_g, center_b = img.getpixel((cx, cy)) if 0 <= cx < width and 0 <= cy < height else (0, 0, 0)
+        center_brightness = (center_r + center_g + center_b) / 3
+        
+        return {
+            'brightness': brightness,
+            'center_brightness': center_brightness,
+            'r': avg_r, 'g': avg_g, 'b': avg_b,
+            'warmth': avg_r + avg_g - avg_b,
+        }
+    
+    # Собираем примеры
+    for row, col in pegs_samples:
+        features = get_cell_features(row, col)
+        if features:
+            peg_features.append(features)
+    
+    for row, col in holes_samples:
+        features = get_cell_features(row, col)
+        if features:
+            hole_features.append(features)
+    
+    if not peg_features and not hole_features:
+        # Нет примеров - используем автоматическое распознавание
+        return recognize_board(img)
+    
+    # Вычисляем средние характеристики примеров
+    if peg_features:
+        avg_peg_brightness = sum(f['brightness'] for f in peg_features) / len(peg_features)
+        avg_peg_warmth = sum(f['warmth'] for f in peg_features) / len(peg_features)
+        avg_peg_center = sum(f['center_brightness'] for f in peg_features) / len(peg_features)
+    else:
+        avg_peg_brightness = avg_peg_warmth = avg_peg_center = 200
+    
+    if hole_features:
+        avg_hole_brightness = sum(f['brightness'] for f in hole_features) / len(hole_features)
+        avg_hole_warmth = sum(f['warmth'] for f in hole_features) / len(hole_features)
+        avg_hole_center = sum(f['center_brightness'] for f in hole_features) / len(hole_features)
+    else:
+        avg_hole_brightness = avg_hole_warmth = avg_hole_center = 50
+    
+    # Порог между колышками и пустыми
+    brightness_threshold = (avg_peg_brightness + avg_hole_brightness) / 2
+    
+    # Классифицируем все ячейки
+    pegs = []
+    holes = []
+    
+    for row in range(7):
+        for col in range(7):
+            features = get_cell_features(row, col)
+            if not features:
+                continue
+            
+            # Расстояние до примеров колышков и пустых мест
+            if peg_features:
+                peg_dist = min(
+                    abs(features['brightness'] - f['brightness']) +
+                    abs(features['warmth'] - f['warmth']) * 0.1
+                    for f in peg_features
+                )
+            else:
+                peg_dist = float('inf')
+            
+            if hole_features:
+                hole_dist = min(
+                    abs(features['brightness'] - f['brightness']) +
+                    abs(features['warmth'] - f['warmth']) * 0.1
+                    for f in hole_features
+                )
+            else:
+                hole_dist = float('inf')
+            
+            # Классифицируем по ближайшему примеру
+            if peg_dist < hole_dist or (not hole_features and features['brightness'] >= brightness_threshold):
+                pegs.append([row, col])
+            else:
+                holes.append([row, col])
+    
+    return pegs, holes
 
 
 def recognize_board(img):

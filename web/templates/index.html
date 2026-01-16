@@ -19,7 +19,21 @@
                 <!-- Скриншот слева -->
                 <div id="screenshot-preview" class="screenshot-preview" style="display: none;">
                     <p class="screenshot-label">📷 Загруженный скриншот:</p>
-                    <img id="screenshot-img" src="" alt="Screenshot">
+                    <div style="position: relative;">
+                        <img id="screenshot-img" src="" alt="Screenshot" style="cursor: crosshair;">
+                        <div id="screenshot-mode" style="display: none; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-secondary);">
+                            Режим обучения: <span id="mode-status">готов</span><br>
+                            <small>Клик по колышку: К, по пустому месту: П</small>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.5rem; display: none;" id="screenshot-actions">
+                        <button class="btn btn-secondary" onclick="startTrainingMode()" style="font-size: 0.75rem; padding: 0.5rem;">
+                            🎯 Обучить на примерах
+                        </button>
+                        <button class="btn btn-secondary" onclick="recognizeWithSamples()" style="font-size: 0.75rem; padding: 0.5rem; display: none;" id="recognize-samples-btn">
+                            ✅ Распознать с примерами
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Доска по центру -->
