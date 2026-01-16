@@ -14,6 +14,7 @@ from .dfs import DFSSolver
 from .astar import AStarSolver, IDAStarSolver
 from .beam import BeamSolver
 from .pattern_astar import PatternAStarSolver
+from .lookup import LookupSolver
 from core.bitboard import BitBoard, CENTER_POS
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
@@ -166,7 +167,10 @@ class GovernorSolver(BaseSolver):
         is_easy = analysis['is_easy']
         is_hard = analysis['is_hard']
         
-        # Мало колышков (< 10) → DFS (быстрое исчерпывающее решение)
+        # Сначала проверяем lookup table (быстро для известных позиций)
+        # Если решение найдено - это самый быстрый способ!
+        
+        # Мало колышков (< 10) → DFS или Lookup (быстрое исчерпывающее решение)
         # НО: только если не слишком сложная позиция
         if peg_count < 10 and not is_hard:
             return {

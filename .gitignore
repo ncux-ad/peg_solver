@@ -72,3 +72,5 @@ venv/
 *.so
 *.c
 build/
+known_solutions.pkl
+english_solution.json

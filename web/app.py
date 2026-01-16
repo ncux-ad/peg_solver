@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
-from solvers import DFSSolver, BeamSolver, HybridSolver, GovernorSolver
+from solvers import DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 # Минимальный Pagoda вес для любой валидной позиции (для произвольных начальных состояний)
@@ -100,13 +100,16 @@ def solve():
     
     # Выбор решателя
     solvers = {
+        'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
         'dfs': lambda: DFSSolver(verbose=False, use_pagoda=False),  # Отключаем Pagoda для надёжности
         'beam': lambda: BeamSolver(beam_width=500, max_depth=35, verbose=False),  # Увеличен beam_width
         'hybrid': lambda: HybridSolver(timeout=120, verbose=False),  # Увеличен timeout
         'governor': lambda: GovernorSolver(timeout=60, verbose=False),  # Увеличен timeout
     }
     
-    solver = solvers.get(solver_type, solvers['beam'])()
+    # По умолчанию используем LookupSolver (быстрее для известных позиций)
+    default_solver = solvers.get('lookup', solvers['beam'])
+    solver = solvers.get(solver_type, default_solver)()
     
     # Решаем
     start_time = time.time()

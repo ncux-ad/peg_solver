@@ -20,6 +20,7 @@ from .bidirectional import BidirectionalSolver
 from .hybrid import HybridSolver
 from .pattern_astar import PatternAStarSolver
 from .governor import GovernorSolver
+from .lookup import LookupSolver
 
 __all__ = [
     'DFSSolver',
@@ -32,4 +33,5 @@ __all__ = [
     'HybridSolver',
     'PatternAStarSolver',
     'GovernorSolver',
+    'LookupSolver',
 ]
