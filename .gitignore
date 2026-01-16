@@ -68,3 +68,7 @@ venv.bak/
 
 # Project specific
 solutions_cache.json
+venv/
+*.so
+*.c
+build/

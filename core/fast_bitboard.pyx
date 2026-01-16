@@ -13,17 +13,26 @@ from libc.stdint cimport uint64_t, int32_t
 from cpython cimport array
 import array
 
-# Валидные позиции английской доски
-cdef uint64_t VALID_MASK = 0x1010101817C3E3E3E17C3810ULL
+# Валидные позиции английской доски (вычисляется)
+# Позиции: 2,3,4, 9,10,11, 14-20, 21-27, 28-34, 37,38,39, 44,45,46
+cdef uint64_t VALID_MASK = (
+    (1ULL << 2) | (1ULL << 3) | (1ULL << 4) |
+    (1ULL << 9) | (1ULL << 10) | (1ULL << 11) |
+    (1ULL << 14) | (1ULL << 15) | (1ULL << 16) | (1ULL << 17) | (1ULL << 18) | (1ULL << 19) | (1ULL << 20) |
+    (1ULL << 21) | (1ULL << 22) | (1ULL << 23) | (1ULL << 24) | (1ULL << 25) | (1ULL << 26) | (1ULL << 27) |
+    (1ULL << 28) | (1ULL << 29) | (1ULL << 30) | (1ULL << 31) | (1ULL << 32) | (1ULL << 33) | (1ULL << 34) |
+    (1ULL << 37) | (1ULL << 38) | (1ULL << 39) |
+    (1ULL << 44) | (1ULL << 45) | (1ULL << 46)
+)
 cdef int CENTER_POS = 24
 
-# Позиции для быстрой генерации ходов
+# Позиции для быстрой генерации ходов (33 позиции)
 cdef int[33] VALID_POSITIONS = [
     2, 3, 4, 9, 10, 11,
     14, 15, 16, 17, 18, 19, 20,
     21, 22, 23, 24, 25, 26, 27,
     28, 29, 30, 31, 32, 33, 34,
-    37, 38, 39, 44, 45, 46, -1
+    37, 38, 39, 44, 45, 46
 ]
 
 
@@ -77,7 +86,7 @@ cpdef list fast_get_moves(uint64_t pegs):
     can_up = pegs & (pegs << 7) & (holes << 14)
     
     i = 0
-    while VALID_POSITIONS[i] >= 0:
+    while i < 33:
         pos = VALID_POSITIONS[i]
         
         # Вправо
