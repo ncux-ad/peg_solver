@@ -18,6 +18,7 @@ from .beam import BeamSolver
 from .parallel import ParallelSolver
 from .bidirectional import BidirectionalSolver
 from .hybrid import HybridSolver
+from .pattern_astar import PatternAStarSolver
 
 __all__ = [
     'DFSSolver',
@@ -27,5 +28,6 @@ __all__ = [
     'BeamSolver',
     'ParallelSolver',
     'BidirectionalSolver',
-    'HybridSolver'
+    'HybridSolver',
+    'PatternAStarSolver'
 ]

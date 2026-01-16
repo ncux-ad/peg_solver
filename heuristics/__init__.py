@@ -23,6 +23,12 @@ from .advanced import (
     heuristic_cluster,
     heuristic_edge_penalty
 )
+from .pattern_db import (
+    PatternDatabase,
+    pattern_heuristic,
+    combined_pattern_heuristic,
+    get_pattern_db
+)
 
 __all__ = [
     'heuristic_peg_count',
@@ -34,5 +40,9 @@ __all__ = [
     'heuristic_mobility',
     'heuristic_isolated',
     'heuristic_cluster',
-    'heuristic_edge_penalty'
+    'heuristic_edge_penalty',
+    'PatternDatabase',
+    'pattern_heuristic',
+    'combined_pattern_heuristic',
+    'get_pattern_db'
 ]
