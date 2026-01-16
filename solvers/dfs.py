@@ -56,12 +56,27 @@ class DFSSolver(BaseSolver):
             self.stats.nodes_pruned += 1
             return None
         
-        # Pagoda pruning
+        # Pagoda pruning (мягкий для произвольных позиций)
+        # Для английской доски с финальным колышком в центре - строгий
+        # Для произвольных позиций - мягкий (минимальный Pagoda вес)
         if self.use_pagoda:
-            if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
-                self.memo.add(key)
-                self.stats.nodes_pruned += 1
-                return None
+            min_pagoda = min(PAGODA_WEIGHTS.values())  # Минимум для любой позиции
+            current_pagoda = pagoda_value(board)
+            
+            # Строгая проверка только если много колышков (близко к началу)
+            # Для позиций близко к концу - мягкая проверка
+            if board.peg_count() > 15:
+                # В начале: строгая проверка (финал в центре - английская доска)
+                if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
+                    self.memo.add(key)
+                    self.stats.nodes_pruned += 1
+                    return None
+            else:
+                # Ближе к концу: мягкая проверка (финал может быть где угодно)
+                if current_pagoda < min_pagoda:
+                    self.memo.add(key)
+                    self.stats.nodes_pruned += 1
+                    return None
         
         # Получаем ходы
         moves = board.get_moves()

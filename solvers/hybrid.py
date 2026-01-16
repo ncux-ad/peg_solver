@@ -36,10 +36,13 @@ class HybridSolver(BaseSolver):
         
         self._log(f"Starting Hybrid Solver (pegs={board.peg_count()}, timeout={self.timeout}s)")
         
-        # Проверка Pagoda
-        if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
-            self._log("Position unsolvable (Pagoda pruning)")
-            return None
+        # Мягкая проверка Pagoda (для произвольных позиций)
+        min_pagoda = min(PAGODA_WEIGHTS.values())
+        current_pagoda = pagoda_value(board)
+        
+        # Более мягкая проверка - не блокируем сразу
+        if current_pagoda < min_pagoda:
+            self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
         
         strategies = [
             ("Beam Search", lambda: BeamSolver(beam_width=200, verbose=False).solve(board)),

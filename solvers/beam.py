@@ -91,9 +91,18 @@ class BeamSolver(BaseSolver):
         # Изолированные колышки
         score += self._count_isolated(board) * 15
         
-        # Pagoda
-        if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
-            score += 1000
+        # Pagoda (мягкий для произвольных позиций)
+        min_pagoda = min(PAGODA_WEIGHTS.values())
+        current_pagoda = pagoda_value(board)
+        
+        if board.peg_count() > 15:
+            # В начале: строгая проверка
+            if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
+                score += 1000
+        else:
+            # Ближе к концу: мягкая проверка
+            if current_pagoda < min_pagoda:
+                score += 1000
         
         return score
     
