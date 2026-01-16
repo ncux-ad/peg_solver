@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peg Solitaire Solver</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 Peg Solitaire Solver</h1>
+            <p class="subtitle">Интерактивный решатель головоломки</p>
+        </header>
+
+        <main>
+            <div class="board-section">
+                <div class="board-container">
+                    <div class="board" id="board">
+                        <!-- Доска генерируется JS -->
+                    </div>
+                    <div class="board-controls">
+                        <button class="btn btn-secondary" onclick="clearBoard()">🗑️ Очистить</button>
+                        <button class="btn btn-secondary" onclick="fillBoard()">⬤ Заполнить</button>
+                        <button class="btn btn-primary" onclick="loadPreset('english')">🇬🇧 Английская</button>
+                    </div>
+                </div>
+
+                <div class="info-panel">
+                    <div class="stats">
+                        <div class="stat">
+                            <span class="stat-value" id="peg-count">0</span>
+                            <span class="stat-label">Колышков</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="moves-available">0</span>
+                            <span class="stat-label">Ходов</span>
+                        </div>
+                        <div class="stat" id="solvable-indicator">
+                            <span class="stat-value">?</span>
+                            <span class="stat-label">Решаемо</span>
+                        </div>
+                    </div>
+
+                    <div class="solver-options">
+                        <label>Решатель:</label>
+                        <select id="solver-select">
+                            <option value="beam">Beam Search (быстрый)</option>
+                            <option value="dfs">DFS (полный)</option>
+                            <option value="hybrid">Hybrid (авто)</option>
+                        </select>
+                    </div>
+
+                    <button class="btn btn-solve" id="solve-btn" onclick="solve()">
+                        🚀 Найти решение
+                    </button>
+
+                    <div class="upload-section">
+                        <label class="upload-label">
+                            📷 Загрузить скриншот
+                            <input type="file" id="screenshot-input" accept="image/*" onchange="uploadScreenshot(event)">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="solution-section" id="solution-section" style="display: none;">
+                <h2>📋 Решение</h2>
+                <div class="solution-info">
+                    <span id="solution-stats"></span>
+                </div>
+                <div class="solution-controls">
+                    <button class="btn btn-secondary" onclick="prevMove()">⬅️ Назад</button>
+                    <button class="btn btn-secondary" id="play-btn" onclick="togglePlay()">▶️ Воспроизвести</button>
+                    <button class="btn btn-secondary" onclick="nextMove()">➡️ Вперёд</button>
+                    <button class="btn btn-secondary" onclick="resetSolution()">🔄 Сбросить</button>
+                </div>
+                <div class="moves-list" id="moves-list">
+                    <!-- Список ходов -->
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>
+                Реализация: <strong>{{ implementation }}</strong>
+                {% if using_cython %}<span class="badge">⚡ Cython</span>{% endif %}
+            </p>
+        </footer>
+    </div>
+
+    <div class="loading-overlay" id="loading" style="display: none;">
+        <div class="spinner"></div>
+        <p>Поиск решения...</p>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
