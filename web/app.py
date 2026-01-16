@@ -225,8 +225,8 @@ def recognize_image():
 
 def recognize_board(img):
     """
-    Распознавание доски по скриншоту.
-    Поддерживает различные приложения Peg Solitaire.
+    Улучшенное распознавание доски по скриншоту.
+    Использует анализ формы, контраста и структуры.
     """
     from PIL import Image, ImageFilter
     
@@ -246,92 +246,162 @@ def recognize_board(img):
     cell_w = width / 7
     cell_h = height / 7
     
+    # Анализируем фон доски (средний цвет вокруг доски)
+    # Берём края изображения как фон
+    border_pixels = []
+    for x in range(0, width, max(1, width // 20)):
+        border_pixels.append(img.getpixel((x, 0)))
+        border_pixels.append(img.getpixel((x, height - 1)))
+    for y in range(0, height, max(1, height // 20)):
+        border_pixels.append(img.getpixel((0, y)))
+        border_pixels.append(img.getpixel((width - 1, y)))
+    
+    bg_r = sum(p[0] for p in border_pixels) / len(border_pixels)
+    bg_g = sum(p[1] for p in border_pixels) / len(border_pixels)
+    bg_b = sum(p[2] for p in border_pixels) / len(border_pixels)
+    bg_brightness = (bg_r + bg_g + bg_b) / 3
+    
     pegs = []
     holes = []
-    
-    # Сначала собираем данные о всех ячейках
     cell_data = []
     
-    # Обрабатываем все позиции на поле 7x7 (поддержка произвольных досок)
+    # Обрабатываем все позиции на поле 7x7
     for row in range(7):
         for col in range(7):
-            
-            # Центр ячейки
+            # Координаты центра ячейки
             cx = int((col + 0.5) * cell_w)
             cy = int((row + 0.5) * cell_h)
             
-            # Область для анализа (центральная часть ячейки)
-            radius = int(min(cell_w, cell_h) * 0.25)
-            region = img.crop((
-                max(0, cx - radius),
-                max(0, cy - radius),
-                min(width, cx + radius),
-                min(height, cy + radius)
-            ))
+            # Анализируем большую область ячейки (70% вместо 50%)
+            radius = int(min(cell_w, cell_h) * 0.35)
+            x1, y1 = max(0, cx - radius), max(0, cy - radius)
+            x2, y2 = min(width, cx + radius), min(height, cy + radius)
+            region = img.crop((x1, y1, x2, y2))
             
-            # Анализируем цвет
-            pixels = list(region.getdata())
-            if pixels:
-                avg_r = sum(p[0] for p in pixels) / len(pixels)
-                avg_g = sum(p[1] for p in pixels) / len(pixels)
-                avg_b = sum(p[2] for p in pixels) / len(pixels)
-                
-                # Различные метрики
-                brightness = (avg_r + avg_g + avg_b) / 3
-                # Колышки обычно более "тёплые" (больше красного/жёлтого)
-                warmth = avg_r + avg_g * 0.5 - avg_b * 0.5
-                # Насыщенность
-                max_c = max(avg_r, avg_g, avg_b)
-                min_c = min(avg_r, avg_g, avg_b)
-                saturation = (max_c - min_c) / max_c if max_c > 0 else 0
-                
-                cell_data.append({
-                    'row': row, 'col': col,
-                    'brightness': brightness,
-                    'warmth': warmth,
-                    'saturation': saturation,
-                    'r': avg_r, 'g': avg_g, 'b': avg_b
-                })
+            # Анализируем несколько точек в ячейке (центр и края)
+            sample_points = [
+                (cx, cy),  # Центр
+                (cx - radius // 2, cy),  # Лево
+                (cx + radius // 2, cy),  # Право
+                (cx, cy - radius // 2),  # Верх
+                (cx, cy + radius // 2),  # Низ
+            ]
+            
+            pixels_sample = []
+            for px, py in sample_points:
+                if 0 <= px < width and 0 <= py < height:
+                    pixels_sample.append(img.getpixel((px, py)))
+            
+            if not pixels_sample:
+                continue
+            
+            # Средние значения цвета
+            avg_r = sum(p[0] for p in pixels_sample) / len(pixels_sample)
+            avg_g = sum(p[1] for p in pixels_sample) / len(pixels_sample)
+            avg_b = sum(p[2] for p in pixels_sample) / len(pixels_sample)
+            
+            # Метрики
+            brightness = (avg_r + avg_g + avg_b) / 3
+            warmth = avg_r + avg_g * 0.5 - avg_b * 0.5
+            max_c = max(avg_r, avg_g, avg_b)
+            min_c = min(avg_r, avg_g, avg_b)
+            saturation = (max_c - min_c) / max_c if max_c > 0 else 0
+            
+            # Контраст с фоном
+            contrast_with_bg = abs(brightness - bg_brightness)
+            
+            # Анализ вариации яркости (колышки имеют блики/тени, пустые - более однородные)
+            brightness_variance = 0
+            if len(pixels_sample) > 1:
+                brightnesses = [(p[0] + p[1] + p[2]) / 3 for p in pixels_sample]
+                avg_b = sum(brightnesses) / len(brightnesses)
+                brightness_variance = sum((b - avg_b) ** 2 for b in brightnesses) / len(brightnesses)
+            
+            # Анализ формы: проверяем, есть ли круглый объект (колышек)
+            # Колышки обычно имеют более высокую яркость в центре (блик)
+            center_brightness = (pixels_sample[0][0] + pixels_sample[0][1] + pixels_sample[0][2]) / 3 if pixels_sample else 0
+            edges_brightness = 0
+            if len(pixels_sample) > 1:
+                edge_pixels = pixels_sample[1:]
+                edges_brightness = sum((p[0] + p[1] + p[2]) / 3 for p in edge_pixels) / len(edge_pixels)
+            
+            # Блик в центре (колышек) vs равномерная яркость (пустое)
+            center_highlight = center_brightness - edges_brightness if len(pixels_sample) > 1 else 0
+            
+            cell_data.append({
+                'row': row, 'col': col,
+                'brightness': brightness,
+                'warmth': warmth,
+                'saturation': saturation,
+                'r': avg_r, 'g': avg_g, 'b': avg_b,
+                'contrast_with_bg': contrast_with_bg,
+                'brightness_variance': brightness_variance,
+                'center_highlight': center_highlight,
+                'center_brightness': center_brightness,
+            })
     
     if not cell_data:
         return pegs, holes
     
-    # Улучшенная кластеризация: используем K-means подход
-    # Разделяем ячейки на 2 кластера: колышки (светлые) и пустые (тёмные)
-    
     if not cell_data:
         return pegs, holes
     
-    # Сортируем по яркости для нахождения порога
-    sorted_cells = sorted(cell_data, key=lambda x: x['brightness'])
+    # Комплексная оценка: комбинируем несколько метрик
+    # Используем взвешенную оценку для каждой ячейки
     
-    # Используем Otsu-like метод: находим оптимальный порог
-    # Берём медианную яркость как начальный порог
-    median_brightness = sorted_cells[len(sorted_cells) // 2]['brightness']
-    
-    # Или используем метод двух пиков (bimodal distribution)
-    # Если есть два кластера, должен быть "провал" между ними
+    # Находим пороговые значения для кластеризации
     brightnesses = [c['brightness'] for c in cell_data]
-    min_bright = min(brightnesses)
-    max_bright = max(brightnesses)
-    brightness_range = max_bright - min_bright
+    contrasts = [c['contrast_with_bg'] for c in cell_data]
+    highlights = [c['center_highlight'] for c in cell_data]
     
-    # Находим оптимальный порог методом минимизации внутрикластерной дисперсии
-    best_threshold = median_brightness
+    min_bright, max_bright = min(brightnesses), max(brightnesses)
+    min_contrast, max_contrast = min(contrasts), max(contrasts) if contrasts else (0, 1)
+    min_highlight, max_highlight = min(highlights), max(highlights) if highlights else (0, 1)
+    
+    # Нормализуем метрики (0-1)
+    for cell in cell_data:
+        cell['brightness_norm'] = (cell['brightness'] - min_bright) / (max_bright - min_bright) if max_bright > min_bright else 0.5
+        cell['contrast_norm'] = (cell['contrast_with_bg'] - min_contrast) / (max_contrast - min_contrast) if max_contrast > min_contrast else 0.5
+        cell['highlight_norm'] = (cell['center_highlight'] - min_highlight) / (max_highlight - min_highlight) if max_highlight > min_highlight else 0.5
+    
+    # Вычисляем комбинированную оценку для каждой ячейки
+    # Колышки: высокая яркость, хороший контраст с фоном, блик в центре
+    for cell in cell_data:
+        score = 0.0
+        
+        # Яркость (40% веса) - колышки светлее фона
+        score += cell['brightness_norm'] * 0.4
+        
+        # Контраст с фоном (30% веса) - колышки контрастнее
+        score += cell['contrast_norm'] * 0.3
+        
+        # Блик в центре (20% веса) - колышки имеют 3D форму
+        if cell['center_highlight'] > 0:
+            score += min(cell['highlight_norm'], 1.0) * 0.2
+        
+        # Вариация яркости (10% веса) - колышки неоднородны (блики/тени)
+        if cell['brightness_variance'] > 50:
+            score += 0.1
+        
+        cell['score'] = score
+    
+    # Находим оптимальный порог методом Otsu
+    scores = sorted([c['score'] for c in cell_data])
+    best_threshold = 0.5
     best_variance = float('inf')
     
-    for threshold in [min_bright + i * brightness_range / 20 for i in range(1, 20)]:
-        cluster1 = [c for c in cell_data if c['brightness'] < threshold]
-        cluster2 = [c for c in cell_data if c['brightness'] >= threshold]
+    for threshold in [scores[i] for i in range(0, len(scores), max(1, len(scores) // 30))]:
+        cluster1 = [c for c in cell_data if c['score'] < threshold]
+        cluster2 = [c for c in cell_data if c['score'] >= threshold]
         
         if not cluster1 or not cluster2:
             continue
         
-        mean1 = sum(c['brightness'] for c in cluster1) / len(cluster1)
-        mean2 = sum(c['brightness'] for c in cluster2) / len(cluster2)
+        mean1 = sum(c['score'] for c in cluster1) / len(cluster1)
+        mean2 = sum(c['score'] for c in cluster2) / len(cluster2)
         
-        var1 = sum((c['brightness'] - mean1) ** 2 for c in cluster1) / len(cluster1)
-        var2 = sum((c['brightness'] - mean2) ** 2 for c in cluster2) / len(cluster2)
+        var1 = sum((c['score'] - mean1) ** 2 for c in cluster1) / len(cluster1)
+        var2 = sum((c['score'] - mean2) ** 2 for c in cluster2) / len(cluster2)
         
         total_variance = var1 * len(cluster1) + var2 * len(cluster2)
         
@@ -339,45 +409,28 @@ def recognize_board(img):
             best_variance = total_variance
             best_threshold = threshold
     
-    # Дополнительные проверки для улучшения точности
-    # Колышки обычно имеют:
-    # 1. Высокую яркость (> порога)
-    # 2. Тёплый цвет (R, G высокие, B низкий)
-    # 3. Хорошую насыщенность
-    
+    # Классификация ячеек
     for cell in cell_data:
-        is_peg = False
+        is_peg = cell['score'] >= best_threshold
         
-        # Основной критерий: яркость выше порога
-        if cell['brightness'] >= best_threshold:
-            is_peg = True
-            
-            # Дополнительные проверки:
-            # Колышки часто имеют тёплый оттенок (бежевый/коричневый)
-            # R и G должны быть высокими
-            if cell['r'] < 100 or cell['g'] < 80:
-                # Слишком холодный цвет - возможно, это не колышек
-                is_peg = False
-            
-            # Проверка на насыщенность (цветные объекты vs серые)
-            if cell['saturation'] < 0.1:
-                # Слишком ненасыщенный - возможно, это фон
-                if cell['brightness'] < best_threshold * 1.2:
-                    is_peg = False
-        
-        # Пустые места должны быть темнее порога
-        else:
+        # Дополнительные проверки для уменьшения ложных срабатываний
+        # Колышки должны быть светлее фона
+        if cell['brightness'] < bg_brightness * 0.9:
             is_peg = False
         
-        # Специальная обработка для очень тёмных ячеек (пустые)
-        if cell['brightness'] < best_threshold * 0.7:
+        # Колышки должны иметь минимальный контраст
+        if cell['contrast_with_bg'] < 20:
+            is_peg = False
+        
+        # Если очень тёмная ячейка - точно не колышек
+        if cell['brightness'] < bg_brightness * 0.6:
             is_peg = False
         
         if is_peg:
             pegs.append([cell['row'], cell['col']])
         else:
             # Добавляем в holes только если это не просто фон
-            if cell['brightness'] < best_threshold:
+            if cell['brightness'] < bg_brightness * 1.1:  # Примерно фон или темнее
                 holes.append([cell['row'], cell['col']])
     
     # Валидация: для английской доски должно быть 32 колышка и 1 пустое место
