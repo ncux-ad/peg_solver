@@ -421,54 +421,58 @@ async function uploadScreenshot(event) {
     loading.querySelector('p').textContent = 'Распознавание...';
     loading.style.display = 'flex';
     
-    try {
-        // Конвертируем в base64
-        const reader = new FileReader();
-        
-        reader.onload = async function(e) {
-            try {
-                const response = await fetch('/api/recognize', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image_data: e.target.result })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Применяем распознанную позицию
-                    clearBoard();
-                    
-                    for (const [row, col] of data.pegs) {
-                        const key = `${row},${col}`;
-                        if (row >= 0 && row < 7 && col >= 0 && col < 7) {
-                            boardState[key] = 'peg';
-                            const cell = getCell(row, col);
-                            cell.classList.remove('empty', 'hole');
-                            cell.classList.add('peg');
-                        }
-                    }
-                    
-                    updateStats();
-                    alert(`Распознано ${data.peg_count} колышков`);
-                } else {
-                    alert(`Ошибка: ${data.error}`);
-                }
-            } catch (error) {
-                console.error('Error recognizing:', error);
-                alert('Ошибка при распознавании');
-            } finally {
-                loading.style.display = 'none';
-                loading.querySelector('p').textContent = 'Поиск решения...';
-            }
-        };
-        
-        reader.readAsDataURL(file);
-    } catch (error) {
-        console.error('Error uploading:', error);
-        loading.style.display = 'none';
-    }
+    // Показываем превью скриншота
+    const preview = document.getElementById('screenshot-preview');
+    const img = document.getElementById('screenshot-img');
+    const reader = new FileReader();
     
-    // Сбрасываем input
-    event.target.value = '';
+    reader.onload = function(e) {
+        img.src = e.target.result;
+        preview.style.display = 'block';
+        
+        // Отправляем на распознавание
+        recognizeScreenshot(e.target.result);
+    };
+    
+    reader.readAsDataURL(file);
+}
+
+async function recognizeScreenshot(imageData) {
+    const loading = document.getElementById('loading');
+    
+    try {
+        const response = await fetch('/api/recognize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_data: imageData })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Применяем распознанную позицию
+            clearBoard();
+            
+            for (const [row, col] of data.pegs) {
+                const key = `${row},${col}`;
+                if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+                    boardState[key] = 'peg';
+                    const cell = getCell(row, col);
+                    cell.classList.remove('empty', 'hole');
+                    cell.classList.add('peg');
+                }
+            }
+            
+            updateStats();
+            alert(`Распознано ${data.peg_count} колышков`);
+        } else {
+            alert(`Ошибка: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Error recognizing:', error);
+        alert('Ошибка при распознавании');
+    } finally {
+        loading.style.display = 'none';
+        loading.querySelector('p').textContent = 'Поиск решения...';
+    }
 }

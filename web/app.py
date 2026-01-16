@@ -296,38 +296,89 @@ def recognize_board(img):
     if not cell_data:
         return pegs, holes
     
-    # Кластеризация: разделяем на колышки и пустые места
-    # Колышки обычно светлее и теплее
-    avg_brightness = sum(c['brightness'] for c in cell_data) / len(cell_data)
-    avg_warmth = sum(c['warmth'] for c in cell_data) / len(cell_data)
+    # Улучшенная кластеризация: используем K-means подход
+    # Разделяем ячейки на 2 кластера: колышки (светлые) и пустые (тёмные)
+    
+    if not cell_data:
+        return pegs, holes
+    
+    # Сортируем по яркости для нахождения порога
+    sorted_cells = sorted(cell_data, key=lambda x: x['brightness'])
+    
+    # Используем Otsu-like метод: находим оптимальный порог
+    # Берём медианную яркость как начальный порог
+    median_brightness = sorted_cells[len(sorted_cells) // 2]['brightness']
+    
+    # Или используем метод двух пиков (bimodal distribution)
+    # Если есть два кластера, должен быть "провал" между ними
+    brightnesses = [c['brightness'] for c in cell_data]
+    min_bright = min(brightnesses)
+    max_bright = max(brightnesses)
+    brightness_range = max_bright - min_bright
+    
+    # Находим оптимальный порог методом минимизации внутрикластерной дисперсии
+    best_threshold = median_brightness
+    best_variance = float('inf')
+    
+    for threshold in [min_bright + i * brightness_range / 20 for i in range(1, 20)]:
+        cluster1 = [c for c in cell_data if c['brightness'] < threshold]
+        cluster2 = [c for c in cell_data if c['brightness'] >= threshold]
+        
+        if not cluster1 or not cluster2:
+            continue
+        
+        mean1 = sum(c['brightness'] for c in cluster1) / len(cluster1)
+        mean2 = sum(c['brightness'] for c in cluster2) / len(cluster2)
+        
+        var1 = sum((c['brightness'] - mean1) ** 2 for c in cluster1) / len(cluster1)
+        var2 = sum((c['brightness'] - mean2) ** 2 for c in cluster2) / len(cluster2)
+        
+        total_variance = var1 * len(cluster1) + var2 * len(cluster2)
+        
+        if total_variance < best_variance:
+            best_variance = total_variance
+            best_threshold = threshold
+    
+    # Дополнительные проверки для улучшения точности
+    # Колышки обычно имеют:
+    # 1. Высокую яркость (> порога)
+    # 2. Тёплый цвет (R, G высокие, B низкий)
+    # 3. Хорошую насыщенность
     
     for cell in cell_data:
-        # Комбинированная метрика
-        # Колышки: высокая яркость + тёплый цвет (бежевый/оранжевый)
-        # Пустые: низкая яркость (тёмные отверстия)
-        
         is_peg = False
         
-        # Для скриншота с бежевыми колышками на коричневом фоне
-        # Колышки светлее фона и теплее
-        if cell['brightness'] > avg_brightness * 0.85:
-            # Дополнительная проверка: колышки имеют характерный бежевый цвет
-            # R > G > B для бежевого
-            if cell['r'] > 150 and cell['g'] > 120 and cell['r'] >= cell['g']:
-                is_peg = True
-        
-        # Альтернативный критерий по теплоте
-        if cell['warmth'] > avg_warmth and cell['brightness'] > 100:
+        # Основной критерий: яркость выше порога
+        if cell['brightness'] >= best_threshold:
             is_peg = True
+            
+            # Дополнительные проверки:
+            # Колышки часто имеют тёплый оттенок (бежевый/коричневый)
+            # R и G должны быть высокими
+            if cell['r'] < 100 or cell['g'] < 80:
+                # Слишком холодный цвет - возможно, это не колышек
+                is_peg = False
+            
+            # Проверка на насыщенность (цветные объекты vs серые)
+            if cell['saturation'] < 0.1:
+                # Слишком ненасыщенный - возможно, это фон
+                if cell['brightness'] < best_threshold * 1.2:
+                    is_peg = False
         
-        # Пустые места обычно значительно темнее
-        if cell['brightness'] < avg_brightness * 0.6:
+        # Пустые места должны быть темнее порога
+        else:
+            is_peg = False
+        
+        # Специальная обработка для очень тёмных ячеек (пустые)
+        if cell['brightness'] < best_threshold * 0.7:
             is_peg = False
         
         if is_peg:
             pegs.append([cell['row'], cell['col']])
         else:
-            holes.append([cell['row'], cell['col']])
+            # Добавляем в holes только если это не просто фон
+            if cell['brightness'] < best_threshold:
+                holes.append([cell['row'], cell['col']])
     
     # Валидация: для английской доски должно быть 32 колышка и 1 пустое место
     # Поддерживаем любые начальные позиции (пустое место может быть в любой валидной позиции)
