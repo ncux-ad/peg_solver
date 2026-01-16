@@ -100,10 +100,10 @@ def solve():
     
     # Выбор решателя
     solvers = {
-        'dfs': lambda: DFSSolver(verbose=False),
-        'beam': lambda: BeamSolver(beam_width=200, verbose=False),
-        'hybrid': lambda: HybridSolver(timeout=30, verbose=False),
-        'governor': lambda: GovernorSolver(timeout=30, verbose=False),  # Уменьшен timeout
+        'dfs': lambda: DFSSolver(verbose=False, use_pagoda=False),  # Отключаем Pagoda для надёжности
+        'beam': lambda: BeamSolver(beam_width=500, max_depth=35, verbose=False),  # Увеличен beam_width
+        'hybrid': lambda: HybridSolver(timeout=120, verbose=False),  # Увеличен timeout
+        'governor': lambda: GovernorSolver(timeout=60, verbose=False),  # Увеличен timeout
     }
     
     solver = solvers.get(solver_type, solvers['beam'])()
