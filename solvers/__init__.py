@@ -12,6 +12,7 @@ solvers - Все решатели Peg Solitaire
 """
 
 from .dfs import DFSSolver
+from .zobrist_dfs import ZobristDFSSolver
 from .astar import AStarSolver, IDAStarSolver
 from .beam import BeamSolver
 from .parallel import ParallelSolver
@@ -20,6 +21,7 @@ from .hybrid import HybridSolver
 
 __all__ = [
     'DFSSolver',
+    'ZobristDFSSolver',
     'AStarSolver', 
     'IDAStarSolver',
     'BeamSolver',
