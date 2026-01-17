@@ -128,6 +128,13 @@ def calculate_solver_limits(unlimited: bool):
     return max_timeout, max_depth, max_iterations
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """Favicon."""
+    from flask import send_from_directory
+    return send_from_directory(app.static_folder, 'favicon.svg', mimetype='image/svg+xml')
+
+
 @app.route('/')
 def index():
     """Главная страница."""
