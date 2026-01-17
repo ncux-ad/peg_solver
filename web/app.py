@@ -662,7 +662,9 @@ def solve():
         'brute_force': lambda: BruteForceSolver(
             timeout=max(3600.0, max_timeout),  # Минимум 1 час для сложных позиций
             max_depth=max_depth_unlimited or 50,
-            verbose=False
+            verbose=False,
+            use_prioritization=False,  # Отключаем приоритизацию для полного перебора
+            use_memoization=True  # Оставляем мемоизацию для оптимизации (но можно отключить если нужно)
         ),  # Полный перебор БЕЗ Pagoda pruning (последняя попытка)
     }
     
