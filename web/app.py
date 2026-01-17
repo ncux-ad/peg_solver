@@ -19,7 +19,7 @@ from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
 from solvers import (
     DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver,
     ParallelBeamSolver, ParallelSolver, AStarSolver, IDAStarSolver,
-    PatternAStarSolver, ZobristDFSSolver, BidirectionalSolver
+    PatternAStarSolver, ZobristDFSSolver, BidirectionalSolver, SequentialSolver
 )
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
@@ -111,6 +111,11 @@ def solve():
     
     solvers = {
         'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
+        'sequential': lambda: SequentialSolver(
+            timeout=max_timeout,
+            max_depth_unlimited=max_depth_unlimited,
+            verbose=False
+        ),  # Систематический перебор от простых к сложным
         'governor': lambda: GovernorSolver(
             timeout=max_timeout, 
             verbose=False
