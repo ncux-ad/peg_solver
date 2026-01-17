@@ -42,8 +42,11 @@ class BruteForceSolver(BaseSolver):
         self.stats = SolverStats()
         self.memo.clear()
         self.start_time = time.time()
+        self.last_progress_log = 0.0
         
         peg_count = board.peg_count()
+        # Всегда выводим важные сообщения
+        print(f"[BruteForce] Starting (pegs={peg_count}, timeout={self.timeout}s, max_depth={self.max_depth})")
         self._log(f"Starting Brute Force Search (pegs={peg_count}, timeout={self.timeout}s, max_depth={self.max_depth})")
         self._log(f"⚠️  WARNING: No Pagoda pruning - this may take a VERY long time!")
         
@@ -54,10 +57,13 @@ class BruteForceSolver(BaseSolver):
         
         if result:
             self.stats.solution_length = len(result)
+            print(f"[BruteForce] ✓ Solution found! ({len(result)} moves, {elapsed:.2f}s, {self.stats.nodes_visited} nodes)")
             self._log(f"✓ Solution found! ({len(result)} moves, {elapsed:.2f}s, {self.stats.nodes_visited} nodes)")
         else:
+            print(f"[BruteForce] ✗ No solution ({elapsed:.2f}s/{self.timeout}s, nodes={self.stats.nodes_visited}, pruned={self.stats.nodes_pruned}, max_depth={self.stats.max_depth}, memo={len(self.memo)})")
             self._log(f"✗ No solution found ({elapsed:.2f}s из {self.timeout}s, {self.stats.nodes_visited} nodes, {self.stats.nodes_pruned} pruned, max_depth={self.stats.max_depth})")
             if elapsed < self.timeout:
+                print(f"[BruteForce] ⚠️  Stopped early! Possible reasons: max_depth={self.max_depth} reached or all paths exhausted")
                 self._log(f"⚠️  Brute Force прервался раньше timeout! Работал {elapsed:.2f}s из {self.timeout}s")
                 self._log(f"   Возможные причины: достигнут max_depth={self.max_depth} или исчерпаны все пути")
         
@@ -75,11 +81,14 @@ class BruteForceSolver(BaseSolver):
         # Периодическое логирование прогресса (каждые 30 секунд)
         if len(path) == 0 and elapsed - self.last_progress_log >= 30.0:
             self.last_progress_log = elapsed
+            msg = f"[BruteForce] ⏳ Progress: {elapsed:.1f}s/{self.timeout:.1f}s, nodes={self.stats.nodes_visited}, depth={self.stats.max_depth}, memo={len(self.memo)}"
+            print(msg)
             self._log(f"⏳ Progress: {elapsed:.1f}s / {self.timeout:.1f}s, nodes={self.stats.nodes_visited}, depth={self.stats.max_depth}, memo={len(self.memo)}")
         
         # Проверка глубины
         if len(path) >= self.max_depth:
-            if len(path) == self.max_depth - 1:  # Логируем только когда достигли лимита
+            if len(path) == self.max_depth:  # Логируем только когда достигли лимита
+                print(f"[BruteForce] 📏 Max depth reached: {len(path)} >= {self.max_depth} (pegs={board.peg_count()})")
                 self._log(f"📏 Max depth reached: {len(path)} >= {self.max_depth}")
             return None
         
@@ -97,6 +106,9 @@ class BruteForceSolver(BaseSolver):
             result = self.memo[key]
             if result is None:
                 self.stats.nodes_pruned += 1
+                # Логируем только на верхнем уровне для статистики
+                if len(path) == 0:
+                    print(f"[BruteForce] Memo hit (pruned): {self.stats.nodes_pruned} nodes pruned so far")
             return result
         
         # Получаем ходы
@@ -152,6 +164,7 @@ class BruteForceSolver(BaseSolver):
         if len(path) == 0:
             elapsed = time.time() - self.start_time
             if elapsed < self.timeout:
+                print(f"[BruteForce] 🔍 All paths exhausted: visited {self.stats.nodes_visited} nodes, max_depth={self.stats.max_depth}, memo_size={len(self.memo)}, pruned={self.stats.nodes_pruned}")
                 self._log(f"🔍 All paths exhausted: visited {self.stats.nodes_visited} nodes, max_depth={self.stats.max_depth}, memo_size={len(self.memo)}")
         
         return None
