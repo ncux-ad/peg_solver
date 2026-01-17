@@ -64,117 +64,163 @@ echo -e "${BLUE}${ARROW} Шаг 1/4: Скачивание rustup installer...${N
 echo -e "${CYAN}   URL: https://sh.rustup.rs${NC}"
 echo ""
 
+# Функция для проверки целостности скачанного файла
+check_file_integrity() {
+    local file=$1
+    
+    # Проверяем, что файл существует и не пуст
+    if [ ! -f "$file" ] || [ ! -s "$file" ]; then
+        return 1
+    fi
+    
+    # Проверяем, что файл заканчивается корректно (не обрезан)
+    # Для bash скрипта последняя строка не должна быть обрезана
+    if [ -n "$(tail -c 1 "$file" | od -An -tx1 | grep -v ' 0a')" ]; then
+        # Файл не заканчивается переводом строки - может быть нормально
+        :
+    fi
+    
+    # Проверяем синтаксис скрипта
+    if head -1 "$file" | grep -q "^#!/bin/sh"; then
+        # Это sh скрипт - проверяем синтаксис
+        if ! sh -n "$file" 2>/dev/null; then
+            return 1
+        fi
+    fi
+    
+    # Проверяем минимальный размер (rustup installer обычно > 20KB)
+    local size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "0")
+    if [ "$size" -lt 10000 ]; then
+        echo -e "${YELLOW}   ⚠️  Предупреждение: файл кажется слишком маленьким (${size} байт)${NC}"
+    fi
+    
+    return 0
+}
+
 # Функция для отображения прогресса загрузки
 download_with_progress() {
     local url=$1
     local output=$2
+    local max_retries=3
+    local retry=0
     
     echo -e "${CYAN}   📥 Начало загрузки инсталлятора...${NC}"
     echo -e "${CYAN}   ℹ️  URL: ${url}${NC}"
     
-    if command -v curl &> /dev/null; then
-        # Анимация "точки" пока идет загрузка (в фоне)
-        (
-            while true; do
-                echo -ne "\r${CYAN}   📥 Загрузка инсталлятора${YELLOW}.${NC}   "
-                sleep 0.4
-                echo -ne "\r${CYAN}   📥 Загрузка инсталлятора${YELLOW}..${NC}  "
-                sleep 0.4
-                echo -ne "\r${CYAN}   📥 Загрузка инсталлятора${YELLOW}...${NC} "
-                sleep 0.4
-                echo -ne "\r${CYAN}   📥 Загрузка инсталлятора${YELLOW}   ${NC}"
-                sleep 0.4
-            done
-        ) &
-        SPINNER_PID=$!
-        
-        # Файл-флаг для отслеживания, начался ли реальный прогресс
-        PROGRESS_FLAG="/tmp/curl_progress_$$.flag"
-        rm -f "$PROGRESS_FLAG"
-        
-        # Загружаем файл - curl покажет прогресс в stderr (--progress-bar)
-        # Перенаправляем stderr в stdout для парсинга
-        curl --proto '=https' --tlsv1.2 -L \
-            --progress-bar \
-            -o "$output" "$url" 2>&1 | \
-            while IFS= read -r line; do
-                # Убиваем анимацию при первом сообщении о прогрессе
-                if [ ! -f "$PROGRESS_FLAG" ] && echo "$line" | grep -qE '^#'; then
-                    kill $SPINNER_PID 2>/dev/null || true
-                    touch "$PROGRESS_FLAG"
-                fi
-                
-                # Парсим строки прогресса curl (начинаются с # и содержат %)
-                if echo "$line" | grep -qE '^#.*[0-9]+\.[0-9]+%'; then
-                    # Извлекаем процент
-                    percent=$(echo "$line" | grep -oP '[0-9]+\.[0-9]+%' | head -1 || echo "")
-                    # Извлекаем размеры (например: "1.2K / 5.3K")
-                    sizes=$(echo "$line" | grep -oP '[0-9]+\.[0-9]+[KM]?\s*/\s*[0-9]+\.[0-9]+[KM]?' | head -1 || echo "")
-                    
-                    if [ -n "$percent" ]; then
-                        if [ -n "$sizes" ]; then
-                            echo -ne "\r${CYAN}   📥 Загрузка: ${YELLOW}${percent}${NC} (${sizes})    "
-                        else
-                            echo -ne "\r${CYAN}   📥 Загрузка: ${YELLOW}${percent}${NC}        "
-                        fi
-                    fi
-                elif echo "$line" | grep -qE '^#'; then
-                    # Другие строки прогресса (без %)
-                    if [ -f "$PROGRESS_FLAG" ]; then
-                        clean_line=$(echo "$line" | sed 's/^#//' | xargs)
-                        if [ -n "$clean_line" ]; then
-                            echo -ne "\r${CYAN}   📥 Загрузка: ${YELLOW}${clean_line}${NC}        "
-                        fi
-                    fi
-                fi
-            done
-        
-        # Удаляем флаг и убиваем спиннер
-        rm -f "$PROGRESS_FLAG"
-        kill $SPINNER_PID 2>/dev/null || true
-        echo ""  # Новая строка после прогресса
-        
-        # Проверяем результат и показываем размер
-        if [ -f "$output" ] && [ -s "$output" ]; then
-            FILE_SIZE=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null || echo "0")
-            if [ "$FILE_SIZE" -gt 0 ]; then
-                if [ "$FILE_SIZE" -gt 1048576 ]; then
-                    SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $FILE_SIZE/1048576}")
-                    echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${SIZE_MB} МБ${NC}"
-                elif [ "$FILE_SIZE" -gt 1024 ]; then
-                    SIZE_KB=$(awk "BEGIN {printf \"%.1f\", $FILE_SIZE/1024}")
-                    echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${SIZE_KB} КБ${NC}"
-                else
-                    echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${FILE_SIZE} байт${NC}"
-                fi
-            fi
-            return 0
-        else
-            return 1
+    while [ $retry -lt $max_retries ]; do
+        if [ $retry -gt 0 ]; then
+            echo -e "${YELLOW}   🔄 Повторная попытка загрузки (${retry}/${max_retries})...${NC}"
+            sleep 2
         fi
         
-    elif command -v wget &> /dev/null; then
-        # Используем wget - он сам покажет прогресс-бар
-        echo -e "${CYAN}   📥 Загрузка инсталлятора (wget)...${NC}"
-        wget --progress=bar:force --show-progress \
-            -O "$output" "$url"
-        return $?
-    else
-        # Fallback
-        echo -e "${YELLOW}   ⚠️  Используется простая загрузка${NC}"
+        # Удаляем старый файл при повторной попытке
+        if [ $retry -gt 0 ]; then
+            rm -f "$output"
+        fi
+        
         if command -v curl &> /dev/null; then
-            if curl --proto '=https' --tlsv1.2 -o "$output" "$url"; then
-                echo -e "${GREEN}   ${CHECK} Загрузка завершена${NC}"
-                return 0
+            # Используем curl БЕЗ перенаправления в pipe - это более надёжно
+            # Показываем простой индикатор
+            echo -ne "${CYAN}   📥 Загрузка инсталлятора...${NC}"
+            
+            # Загружаем файл с прогресс-баром (выводится в stderr, не перехватываем)
+            # Используем -f для fail на ошибки HTTP, -S для показа ошибок
+            if curl --proto '=https' --tlsv1.2 -L \
+                --fail \
+                --show-error \
+                --connect-timeout 30 \
+                --max-time 300 \
+                --progress-bar \
+                -o "$output" "$url"; then
+                
+                echo ""  # Новая строка после прогресс-бара
+                
+                # Проверяем целостность файла
+                if check_file_integrity "$output"; then
+                    FILE_SIZE=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null || echo "0")
+                    if [ "$FILE_SIZE" -gt 0 ]; then
+                        if [ "$FILE_SIZE" -gt 1048576 ]; then
+                            SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $FILE_SIZE/1048576}")
+                            echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${SIZE_MB} МБ${NC}"
+                        elif [ "$FILE_SIZE" -gt 1024 ]; then
+                            SIZE_KB=$(awk "BEGIN {printf \"%.1f\", $FILE_SIZE/1024}")
+                            echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${SIZE_KB} КБ${NC}"
+                        else
+                            echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${FILE_SIZE} байт${NC}"
+                        fi
+                    fi
+                    return 0
+                else
+                    echo -e "${RED}   ${CROSS} Файл повреждён или обрезан${NC}"
+                    retry=$((retry + 1))
+                    continue
+                fi
             else
-                echo -e "${RED}   ${CROSS} Ошибка загрузки${NC}"
+                echo -e "\r${RED}   ${CROSS} Ошибка загрузки${NC}"
+                retry=$((retry + 1))
+                continue
+            fi
+        
+        elif command -v wget &> /dev/null; then
+            # Используем wget - он сам покажет прогресс-бар
+            echo -e "${CYAN}   📥 Загрузка инсталлятора (wget)...${NC}"
+            if wget --progress=bar:force --show-progress \
+                --timeout=30 \
+                -O "$output" "$url"; then
+                
+                # Проверяем целостность
+                if check_file_integrity "$output"; then
+                    FILE_SIZE=$(stat -c%s "$output" 2>/dev/null || stat -f%z "$output" 2>/dev/null || echo "0")
+                    if [ "$FILE_SIZE" -gt 1024 ]; then
+                        SIZE_KB=$(awk "BEGIN {printf \"%.1f\", $FILE_SIZE/1024}")
+                        echo -e "${GREEN}   ${CHECK} Инсталлятор скачан: ${YELLOW}${SIZE_KB} КБ${NC}"
+                    fi
+                    return 0
+                else
+                    echo -e "${RED}   ${CROSS} Файл повреждён или обрезан${NC}"
+                    retry=$((retry + 1))
+                    continue
+                fi
+            else
+                retry=$((retry + 1))
+                continue
+            fi
+        else
+            # Fallback
+            echo -e "${YELLOW}   ⚠️  Используется простая загрузка${NC}"
+            if command -v curl &> /dev/null; then
+                if curl --proto '=https' --tlsv1.2 --fail -o "$output" "$url"; then
+                    if check_file_integrity "$output"; then
+                        echo -e "${GREEN}   ${CHECK} Загрузка завершена${NC}"
+                        return 0
+                    else
+                        echo -e "${RED}   ${CROSS} Файл повреждён${NC}"
+                        retry=$((retry + 1))
+                        continue
+                    fi
+                else
+                    echo -e "${RED}   ${CROSS} Ошибка загрузки${NC}"
+                    retry=$((retry + 1))
+                    continue
+                fi
+            else
+                echo -e "${RED}   ${CROSS} Ошибка: curl или wget не найдены${NC}"
                 return 1
             fi
-        else
-            echo -e "${RED}   ${CROSS} Ошибка: curl или wget не найдены${NC}"
-            return 1
         fi
-    fi
+    done
+    
+    # Все попытки исчерпаны
+    echo -e "${RED}   ${CROSS} Не удалось скачать файл после ${max_retries} попыток${NC}"
+    echo -e "${YELLOW}   💡 Возможные причины:${NC}"
+    echo -e "${YELLOW}      - Проблемы с доступностью сервера из вашего региона${NC}"
+    echo -e "${YELLOW}      - Проблемы с интернет-соединением${NC}"
+    echo -e "${YELLOW}      - Блокировка антивирусом/файрволом${NC}"
+    echo ""
+    echo -e "${CYAN}   💡 Альтернатива: используйте системный пакетный менеджер${NC}"
+    echo -e "${CYAN}      Ubuntu/Debian: sudo apt install rustc cargo${NC}"
+    echo -e "${CYAN}      Или скачайте вручную с https://rustup.rs${NC}"
+    return 1
 }
 
 # Скачиваем инсталлятор с наглядным прогрессом

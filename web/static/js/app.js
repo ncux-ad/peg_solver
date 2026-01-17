@@ -27,11 +27,124 @@ let trainingMode = false; // Режим обучения
 let pegSamples = []; // Примеры колышков [[row, col], ...]
 let holeSamples = []; // Примеры пустых мест [[row, col], ...]
 
+// Описания решателей
+const solverDescriptions = {
+    'lookup': {
+        name: '📚 Lookup',
+        description: 'Мгновенное решение для известных позиций из базы решений. Полный алгоритм с автоматическим fallback.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐⭐',
+        use: 'Стандартные позиции'
+    },
+    'governor': {
+        name: '🎯 Governor',
+        description: 'Умный выбор алгоритма на основе анализа позиции (количество колышков, доступных ходов, сложности). Рекомендуется для большинства случаев.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐⭐',
+        use: 'Рекомендуется'
+    },
+    'parallel_beam': {
+        name: '⚡ Parallel Beam',
+        description: 'Параллельный Beam Search - распараллеливает обработку каждого уровня. Эффективен для больших позиций (>25 колышков).',
+        completeness: '❌ Неполный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Большие позиции (>25)'
+    },
+    'parallel': {
+        name: '⚡ Parallel DFS',
+        description: 'Многопроцессный DFS - распределяет первые ходы между процессами. Полный алгоритм с ускорением на многоядерных системах.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Глубокие позиции'
+    },
+    'beam': {
+        name: 'Beam Search',
+        description: 'Ограниченный по ширине поиск - сохраняет только K лучших состояний на каждом уровне. Быстрый, но может пропустить решение.',
+        completeness: '❌ Неполный',
+        speed: '⭐⭐⭐⭐⭐',
+        use: 'Универсальный'
+    },
+    'dfs': {
+        name: 'DFS',
+        description: 'Поиск в глубину с мемоизацией - исчерпывающий полный алгоритм. Гарантирует нахождение решения, если оно существует.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐',
+        use: 'Маленькие позиции (<10)'
+    },
+    'zobrist_dfs': {
+        name: '🔐 Zobrist DFS',
+        description: 'DFS с Zobrist Hashing - использует инкрементальное хеширование для быстрой проверки посещённых состояний. Эффективен для глубокого поиска.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Глубокий поиск'
+    },
+    'astar': {
+        name: '⭐ A*',
+        description: 'A* с эвристиками - оптимальный алгоритм поиска пути. Использует эвристическую оценку для приоритизации состояний.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Средние позиции'
+    },
+    'ida': {
+        name: '📊 IDA*',
+        description: 'IDA* (Iterative Deepening A*) - экономит память, не храня все состояния. Эффективен для сложных позиций (>20 колышков).',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐',
+        use: 'Сложные позиции (>20)'
+    },
+    'pattern_astar': {
+        name: '🎨 Pattern A*',
+        description: 'A* с Pattern Database - использует предвычисленные эвристики для 5 регионов доски. Оптимизированный вариант A*.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Оптимизированный A*'
+    },
+    'bidirectional': {
+        name: '↔️ Bidirectional',
+        description: 'Двунаправленный поиск - ищет от начальной и целевой позиций одновременно. Ускоряет поиск за счёт сокращения пространства.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Ускоренный поиск'
+    },
+    'hybrid': {
+        name: '🔄 Hybrid',
+        description: 'Комбинация всех алгоритмов - пробует несколько стратегий по очереди (Beam Search, DFS, A*, IDA*). Автоматический выбор лучшего.',
+        completeness: '✅ Полный',
+        speed: '⭐⭐⭐⭐',
+        use: 'Автоматический выбор'
+    }
+};
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     initBoard();
     loadPreset('english');
+    
+    // Обработчик изменения решателя
+    const solverSelect = document.getElementById('solver-select');
+    if (solverSelect) {
+        solverSelect.addEventListener('change', updateSolverDescription);
+        updateSolverDescription(); // Показываем описание для выбранного решателя
+    }
 });
+
+function updateSolverDescription() {
+    const solverSelect = document.getElementById('solver-select');
+    const descriptionDiv = document.getElementById('solver-description');
+    const selectedSolver = solverSelect.value;
+    
+    if (solverDescriptions[selectedSolver]) {
+        const info = solverDescriptions[selectedSolver];
+        descriptionDiv.innerHTML = `
+            <strong>${info.name}:</strong> ${info.description}<br>
+            <small style="color: var(--text-secondary); margin-top: 0.25rem; display: block;">
+                Полнота: ${info.completeness} • Скорость: ${info.speed} • Применение: ${info.use}
+            </small>
+        `;
+    } else {
+        descriptionDiv.textContent = 'Описание недоступно';
+    }
+}
 
 function initBoard() {
     const board = document.getElementById('board');
@@ -202,6 +315,7 @@ async function solve() {
     if (pegs.length < 2) return;
     
     const solver = document.getElementById('solver-select').value;
+    const unlimited = document.getElementById('unlimited-checkbox').checked;
     const loading = document.getElementById('loading');
     
     loading.style.display = 'flex';
@@ -210,7 +324,7 @@ async function solve() {
         const response = await fetch('/api/solve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pegs, solver })
+            body: JSON.stringify({ pegs, solver, unlimited })
         });
         
         const data = await response.json();
