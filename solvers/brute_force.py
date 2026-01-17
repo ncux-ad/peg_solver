@@ -92,7 +92,7 @@ class BruteForceSolver(BaseSolver):
         # Проверка глубины
         if len(path) >= self.max_depth:
             if len(path) == self.max_depth:  # Логируем только когда достигли лимита
-                print(f"[BruteForce] 📏 Max depth reached: {len(path)} >= {self.max_depth} (pegs={board.peg_count()})")
+                print(f"[BruteForce] 📏 Max depth reached: {len(path)} >= {self.max_depth} (pegs={board.peg_count()}, remaining_moves={len(board.get_moves())})")
                 self._log(f"📏 Max depth reached: {len(path)} >= {self.max_depth}")
             return None
         
