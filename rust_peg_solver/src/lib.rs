@@ -192,7 +192,7 @@ fn rust_evaluate_batch(pegs_list: Vec<u64>, moves_list: Vec<usize>) -> PyResult<
 }
 
 #[pymodule]
-fn rust_peg_solver(_py: Python, m: &PyModule) -> PyResult<()> {
+fn rust_peg_solver(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rust_peg_count, m)?)?;
     m.add_function(wrap_pyfunction!(rust_has_peg, m)?)?;
     m.add_function(wrap_pyfunction!(rust_apply_move, m)?)?;
