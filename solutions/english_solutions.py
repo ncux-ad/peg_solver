@@ -116,7 +116,16 @@ def verify_solution(solution: List[Tuple[int, int, int]],
         return state == ENGLISH_GOAL
     else:
         # Любой колышек в любом месте (проверяем, что остался ровно 1)
-        return bin(state).count('1') == 1
+        # Используем быстрый popcount
+        import sys
+        if sys.version_info >= (3, 10):
+            return state.bit_count() == 1
+        else:
+            x = state
+            x = x - ((x >> 1) & 0x5555555555555555)
+            x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+            x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+            return ((x * 0x0101010101010101) >> 56) & 0xFF == 1
 
 
 # =====================================================

@@ -121,20 +121,21 @@ class GovernorSolver(BaseSolver):
     
     def _avg_distance_to_center(self, board: BitBoard) -> float:
         """Среднее расстояние колышков до центра."""
-        if board.peg_count() == 0:
+        from core.bitboard import ENGLISH_VALID_POSITIONS
+        
+        peg_count = board.peg_count()
+        if peg_count == 0:
             return 0.0
         
         total_dist = 0
-        count = 0
-        
-        for pos in range(49):  # 7x7
+        # Оптимизация: используем только валидные позиции вместо всех 49
+        for pos in ENGLISH_VALID_POSITIONS:
             if board.has_peg(pos):
                 row, col = pos // 7, pos % 7
                 dist = abs(row - 3) + abs(col - 3)
                 total_dist += dist
-                count += 1
         
-        return total_dist / count if count > 0 else 0.0
+        return total_dist / peg_count if peg_count > 0 else 0.0
     
     def _solve_with_timeout(self, solver, board: BitBoard, timeout: float, start_time: float) -> Optional[List]:
         """

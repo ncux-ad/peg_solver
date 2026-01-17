@@ -87,7 +87,17 @@ def solve():
             'error': 'Нет колышков на доске'
         })
     
-    peg_count = bin(pegs_bits).count('1')
+    # Используем быстрый popcount
+    import sys
+    if sys.version_info >= (3, 10):
+        peg_count = pegs_bits.bit_count()
+    else:
+        # Fallback для старых версий
+        x = pegs_bits
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
     
     # Проверка Pagoda для произвольных начальных состояний
     # Цель - 1 колышек в любой валидной позиции (не обязательно центр)
@@ -207,7 +217,17 @@ def validate():
             if 0 <= pos < 49:
                 pegs_bits |= (1 << pos)
     
-    peg_count = bin(pegs_bits).count('1')
+    # Используем быстрый popcount
+    import sys
+    if sys.version_info >= (3, 10):
+        peg_count = pegs_bits.bit_count()
+    else:
+        # Fallback для старых версий
+        x = pegs_bits
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
     
     # Проверка Pagoda для произвольных начальных состояний
     board = BitBoard(pegs_bits)

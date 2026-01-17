@@ -9,7 +9,22 @@ core/fast_bitboard_py.py
     python setup.py build_ext --inplace
 """
 
+import sys
 from typing import List, Tuple
+
+# Быстрый popcount (подсчёт битов)
+if sys.version_info >= (3, 10):
+    # Python 3.10+ имеет встроенный bit_count() (использует CPU popcount)
+    def _popcount(x: int) -> int:
+        return x.bit_count()
+else:
+    # Fallback для старых версий Python
+    def _popcount(x: int) -> int:
+        """Быстрый подсчёт битов (popcount) для Python < 3.10."""
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        return ((x * 0x0101010101010101) >> 56) & 0xFF
 
 # Валидная маска английской доски
 VALID_MASK = sum(1 << pos for pos in [
@@ -31,7 +46,7 @@ VALID_POSITIONS = [
 
 def fast_peg_count(pegs: int) -> int:
     """Подсчёт колышков."""
-    return bin(pegs).count('1')
+    return _popcount(pegs)
 
 
 def fast_has_peg(pegs: int, pos: int) -> bool:
@@ -75,7 +90,7 @@ def fast_get_moves(pegs: int) -> List[Tuple[int, int, int]]:
 
 def fast_is_dead(pegs: int) -> bool:
     """Проверка тупика."""
-    if bin(pegs).count('1') <= 1:
+    if _popcount(pegs) <= 1:
         return False
     
     holes = VALID_MASK & ~pegs

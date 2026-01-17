@@ -9,10 +9,23 @@ Zobrist Hashing — инкрементальное хеширование сос
 - Идеально для DFS/IDA* с backtracking
 """
 
+import sys
 import random
 from typing import Dict, Tuple
 
 from .bitboard import ENGLISH_VALID_POSITIONS
+
+# Быстрый popcount (подсчёт битов)
+if sys.version_info >= (3, 10):
+    def _popcount(x: int) -> int:
+        return x.bit_count()
+else:
+    def _popcount(x: int) -> int:
+        """Быстрый подсчёт битов (popcount) для Python < 3.10."""
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        return ((x * 0x0101010101010101) >> 56) & 0xFF
 
 # Инициализация генератора для воспроизводимости
 random.seed(42)
@@ -77,7 +90,7 @@ class ZobristBitBoard:
     
     def __init__(self, pegs: int, zobrist_hash: int = None):
         self.pegs = pegs
-        self._count = bin(pegs).count('1')
+        self._count = _popcount(pegs)
         
         if zobrist_hash is None:
             self.zobrist_hash = compute_zobrist_hash(pegs)

@@ -5,8 +5,23 @@ core/bitboard.py
 Для английской доски (33 позиции) — один 64-bit int.
 """
 
+import sys
 from typing import List, Tuple, Optional
 from functools import lru_cache
+
+# Быстрый popcount (подсчёт битов)
+if sys.version_info >= (3, 10):
+    # Python 3.10+ имеет встроенный bit_count() (использует CPU popcount)
+    def _popcount(x: int) -> int:
+        return x.bit_count()
+else:
+    # Fallback для старых версий Python
+    def _popcount(x: int) -> int:
+        """Быстрый подсчёт битов (popcount) для Python < 3.10."""
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        return ((x * 0x0101010101010101) >> 56) & 0xFF
 
 # Валидные позиции английской доски (33 клетки)
 ENGLISH_VALID_POSITIONS = frozenset([
@@ -33,6 +48,31 @@ def coords_to_pos(row: int, col: int) -> int:
     return row * 7 + col
 
 
+def _rotate_90_pegs(pegs: int) -> int:
+    """Поворот на 90° (работает напрямую с pegs, без создания объекта)."""
+    new_pegs = 0
+    for pos in ENGLISH_VALID_POSITIONS:
+        if pegs & (1 << pos):
+            r, c = pos // 7, pos % 7
+            nr, nc = c, 6 - r
+            new_pos = nr * 7 + nc
+            if new_pos in ENGLISH_VALID_POSITIONS:
+                new_pegs |= (1 << new_pos)
+    return new_pegs
+
+
+def _flip_h_pegs(pegs: int) -> int:
+    """Горизонтальное отражение (работает напрямую с pegs, без создания объекта)."""
+    new_pegs = 0
+    for pos in ENGLISH_VALID_POSITIONS:
+        if pegs & (1 << pos):
+            r, c = pos // 7, pos % 7
+            new_pos = r * 7 + (6 - c)
+            if new_pos in ENGLISH_VALID_POSITIONS:
+                new_pegs |= (1 << new_pos)
+    return new_pegs
+
+
 class BitBoard:
     """Битовое представление доски Peg Solitaire."""
     __slots__ = ('pegs', '_hash', '_count')
@@ -40,7 +80,7 @@ class BitBoard:
     def __init__(self, pegs: int):
         self.pegs = pegs
         self._hash = hash(pegs)
-        self._count = bin(pegs).count('1')
+        self._count = _popcount(pegs)
 
     @classmethod
     def english_start(cls) -> 'BitBoard':
@@ -75,16 +115,20 @@ class BitBoard:
         # Горизонтальные
         can_right = pegs & (pegs >> 1) & (holes >> 2)
         can_left = pegs & (pegs << 1) & (holes << 2)
+        
+        # Вертикальные
+        can_down = pegs & (pegs >> 7) & (holes >> 14)
+        can_up = pegs & (pegs << 7) & (holes << 14)
+        
+        # Один проход по позициям вместо двух
         for pos in ENGLISH_VALID_POSITIONS:
+            # Горизонтальные ходы
             if can_right & (1 << pos) and pos % 7 <= 4:
                 moves.append((pos, pos + 1, pos + 2))
             if can_left & (1 << pos) and pos % 7 >= 2:
                 moves.append((pos, pos - 1, pos - 2))
-
-        # Вертикальные
-        can_down = pegs & (pegs >> 7) & (holes >> 14)
-        can_up = pegs & (pegs << 7) & (holes << 14)
-        for pos in ENGLISH_VALID_POSITIONS:
+            
+            # Вертикальные ходы
             if can_down & (1 << pos) and pos // 7 <= 4:
                 to = pos + 14
                 if to in ENGLISH_VALID_POSITIONS:
@@ -108,43 +152,54 @@ class BitBoard:
         return self.pegs == ENGLISH_GOAL
 
     def is_dead(self) -> bool:
-        return self._count > 1 and len(self.get_moves()) == 0
+        """Проверка тупика (оптимизированная версия)."""
+        if self._count <= 1:
+            return False
+        # Быстрая проверка без генерации всех ходов
+        pegs = self.pegs
+        holes = VALID_MASK & ~pegs
+        
+        # Проверяем, есть ли хоть один ход (битовые операции)
+        can_move = (pegs & (pegs >> 1) & (holes >> 2)) or \
+                   (pegs & (pegs << 1) & (holes << 2)) or \
+                   (pegs & (pegs >> 7) & (holes >> 14)) or \
+                   (pegs & (pegs << 7) & (holes << 14))
+        return not bool(can_move)
 
     def canonical(self) -> 'BitBoard':
         """Каноническая форма (минимальная из 8 симметрий)."""
-        variants = [self]
-        current = self
+        # Оптимизация: вычисляем все варианты напрямую через pegs, без создания объектов
+        variants_pegs = [self.pegs]
+        current_pegs = self.pegs
+        
+        # 3 поворота на 90°
         for _ in range(3):
-            current = current._rotate_90()
-            variants.append(current)
-        flipped = self._flip_h()
-        variants.append(flipped)
-        current = flipped
+            current_pegs = _rotate_90_pegs(current_pegs)
+            variants_pegs.append(current_pegs)
+        
+        # Отражение
+        flipped_pegs = _flip_h_pegs(self.pegs)
+        variants_pegs.append(flipped_pegs)
+        current_pegs = flipped_pegs
+        
+        # 3 поворота отражённой версии
         for _ in range(3):
-            current = current._rotate_90()
-            variants.append(current)
-        return min(variants, key=lambda b: b.pegs)
+            current_pegs = _rotate_90_pegs(current_pegs)
+            variants_pegs.append(current_pegs)
+        
+        # Находим минимальный и создаём объект только один раз
+        min_pegs = min(variants_pegs)
+        if min_pegs == self.pegs:
+            return self
+        return BitBoard(min_pegs)
 
     def _rotate_90(self) -> 'BitBoard':
-        new_pegs = 0
-        for pos in ENGLISH_VALID_POSITIONS:
-            if self.pegs & (1 << pos):
-                r, c = pos // 7, pos % 7
-                nr, nc = c, 6 - r
-                new_pos = nr * 7 + nc
-                if new_pos in ENGLISH_VALID_POSITIONS:
-                    new_pegs |= (1 << new_pos)
-        return BitBoard(new_pegs)
+        """Поворот на 90° (для обратной совместимости)."""
+        return BitBoard(_rotate_90_pegs(self.pegs))
 
     def _flip_h(self) -> 'BitBoard':
-        new_pegs = 0
-        for pos in ENGLISH_VALID_POSITIONS:
-            if self.pegs & (1 << pos):
-                r, c = pos // 7, pos % 7
-                new_pos = r * 7 + (6 - c)
-                if new_pos in ENGLISH_VALID_POSITIONS:
-                    new_pegs |= (1 << new_pos)
-        return BitBoard(new_pegs)
+        """Горизонтальное отражение (для обратной совместимости)."""
+        return BitBoard(_flip_h_pegs(self.pegs))
 
     def to_string(self) -> str:
         lines = []

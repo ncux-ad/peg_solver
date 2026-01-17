@@ -11,12 +11,25 @@ Pattern Database (PDB) — предвычисленные эвристики.
 Это даёт очень сильную нижнюю границу!
 """
 
+import sys
 from typing import Dict, List, Tuple, Set, Optional
 from collections import deque
 import pickle
 import os
 
 from core.bitboard import ENGLISH_VALID_POSITIONS, CENTER_POS
+
+# Быстрый popcount (подсчёт битов)
+if sys.version_info >= (3, 10):
+    def _popcount(x: int) -> int:
+        return x.bit_count()
+else:
+    def _popcount(x: int) -> int:
+        """Быстрый подсчёт битов (popcount) для Python < 3.10."""
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        return ((x * 0x0101010101010101) >> 56) & 0xFF
 
 # =====================================================
 # РАЗБИЕНИЕ ДОСКИ НА РЕГИОНЫ
@@ -68,7 +81,7 @@ def extract_region_state(pegs: int, region: frozenset) -> int:
 
 def region_peg_count(state: int, region_size: int) -> int:
     """Количество колышков в состоянии региона."""
-    return bin(state).count('1')
+    return _popcount(state)
 
 
 # =====================================================
@@ -223,7 +236,7 @@ def combined_pattern_heuristic(pegs: int, steps: int) -> float:
     from core.bitboard import BitBoard
     
     # Базовая эвристика
-    peg_count = bin(pegs).count('1')
+    peg_count = _popcount(pegs)
     base_h = peg_count - 1
     
     # Pattern heuristic

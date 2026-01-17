@@ -96,19 +96,27 @@ def _evaluate_position_python(board: BitBoard, num_moves: int) -> float:
 
 
 def _count_isolated_python(board: BitBoard) -> int:
-    """Подсчёт изолированных колышков (Python версия)."""
+    """Подсчёт изолированных колышков (Python версия, оптимизированная)."""
     count = 0
+    pegs = board.pegs
+    
     for pos in ENGLISH_VALID_POSITIONS:
-        if not board.has_peg(pos):
+        if not (pegs & (1 << pos)):
             continue
+        
         r, c = pos // 7, pos % 7
-        has_neighbor = any(
-            board.has_peg(nr * 7 + nc)
-            for nr, nc in [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
-            if (nr * 7 + nc) in ENGLISH_VALID_POSITIONS
-        )
+        # Проверяем соседей битовыми операциями
+        has_neighbor = False
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            neighbor_pos = nr * 7 + nc
+            if neighbor_pos in ENGLISH_VALID_POSITIONS and (pegs & (1 << neighbor_pos)):
+                has_neighbor = True
+                break
+        
         if not has_neighbor:
             count += 1
+    
     return count
 
 
