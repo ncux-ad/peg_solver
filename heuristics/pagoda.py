@@ -18,18 +18,33 @@ PAGODA_WEIGHTS = {
 }
 
 
+# Автоматический выбор быстрой реализации
+try:
+    from .fast_pagoda import pagoda_value_fast
+    _USE_FAST_PAGODA = True
+except ImportError:
+    _USE_FAST_PAGODA = False
+
+
 def pagoda_value(board: BitBoard) -> int:
     """
     Вычисляет значение Pagoda функции.
     
+    Автоматически использует оптимизированную версию (Numba/Rust), если доступна.
+    
     Pagoda никогда не увеличивается при ходе.
     Если текущее значение < целевого — решение невозможно.
     """
-    total = 0
-    for pos, weight in PAGODA_WEIGHTS.items():
-        if board.has_peg(pos):
-            total += weight
-    return total
+    if _USE_FAST_PAGODA:
+        # Используем оптимизированную версию
+        return pagoda_value_fast(board.pegs)
+    else:
+        # Fallback на чистый Python
+        total = 0
+        for pos, weight in PAGODA_WEIGHTS.items():
+            if board.has_peg(pos):
+                total += weight
+        return total
 
 
 def is_solvable_by_pagoda(board: BitBoard, target_pos: int = CENTER_POS) -> bool:

@@ -9,6 +9,7 @@ from typing import List, Tuple, Optional
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from heuristics import pagoda_value, PAGODA_WEIGHTS
+from .optimized_utils import evaluate_position_optimized
 
 
 class BeamSolver(BaseSolver):
@@ -62,7 +63,9 @@ class BeamSolver(BaseSolver):
                         continue
                     visited.add(key)
                     
-                    score = self._evaluate(new_board)
+                    # Используем оптимизированную версию оценки
+                    num_moves = len(new_board.get_moves())
+                    score = evaluate_position_optimized(new_board, num_moves)
                     candidates.append((score, new_board, path + [move]))
             
             # Оставляем лучшие
@@ -76,7 +79,22 @@ class BeamSolver(BaseSolver):
         return None
     
     def _evaluate(self, board: BitBoard) -> float:
-        """Оценка позиции (меньше = лучше)."""
+        """Оценка позиции (меньше = лучше).
+        
+        Автоматически использует оптимизированную версию (Numba/Rust) если доступна.
+        """
+        # Пробуем использовать оптимизированную функцию оценки
+        try:
+            from heuristics.evaluation import evaluate_position
+            base_score = evaluate_position(board)
+            
+            # Добавляем изолированные колышки (дополнительная эвристика)
+            isolated_penalty = self._count_isolated(board) * 15
+            return base_score + isolated_penalty
+        except ImportError:
+            pass
+        
+        # Fallback на оригинальную версию
         score = board.peg_count() * 10
         
         # Расстояние до центра
