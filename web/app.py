@@ -79,6 +79,55 @@ def get_modules_info():
     return modules
 
 
+def calculate_solver_limits(unlimited: bool):
+    """
+    Рассчитывает лимиты времени и итераций на основе производительности системы.
+    
+    Returns:
+        tuple: (max_timeout, max_depth, max_iterations)
+    """
+    if not unlimited:
+        return 300.0, 50, 10000000  # 5 минут, 50 глубина, 10 млн итераций
+    
+    # Базовая оценка производительности (Nodes Per Second)
+    # Python ~ 100k, Cython ~ 2-4M, Rust ~ 10-20M
+    nps_estimate = 100000  # Python base
+    impl_name = "Pure Python"
+    
+    # Проверяем доступные ускорения
+    try:
+        from core.rust_fast import USING_RUST
+        if USING_RUST:
+            nps_estimate = 15000000  # 15M NPS
+            impl_name = "Rust"
+    except ImportError:
+        pass
+        
+    if impl_name == "Pure Python":
+        from core.fast import USING_CYTHON
+        if USING_CYTHON:
+            nps_estimate = 3000000  # 3M NPS
+            impl_name = "Cython"
+            
+    # Целевое количество итераций для "Unlimited"
+    # Для решения сложных задач обычно требуется от 100 млн до 1 млрд состояний
+    max_iterations = 1_000_000_000  # 1 миллиард
+    
+    # Рассчитываем примерное время выполнения
+    estimated_seconds = max_iterations / nps_estimate
+    
+    # Устанавливаем timeout с запасом (x2 от расчетного), но не менее 1 часа
+    # Это позволяет избежать преждевременного завершения
+    max_timeout = max(3600.0, estimated_seconds * 2.0)
+    
+    # Глубина поиска (1000 достаточно для любой игры)
+    max_depth = 1000
+    
+    print(f"Solver Limits ({impl_name}): Target 1B iters ~= {estimated_seconds/60:.1f} min. Timeout set to {max_timeout/60:.1f} min.")
+    
+    return max_timeout, max_depth, max_iterations
+
+
 @app.route('/')
 def index():
     """Главная страница."""
@@ -137,8 +186,8 @@ def solve_stream():
             'peg_count': peg_count
         })
     
-    max_timeout = 10800.0 if unlimited else 300.0  # 3 часа при "Без ограничений", иначе 5 минут
-    max_depth_unlimited = 1000 if unlimited else 50  # Увеличено до 50 для позиций с большим количеством колышков
+    # Рассчитываем лимиты на основе производительности
+    max_timeout, max_depth_unlimited, max_iterations_unlimited = calculate_solver_limits(unlimited)
     
     # Создаём queue для передачи событий прогресса
     progress_queue = queue.Queue()
@@ -180,6 +229,7 @@ def solve_stream():
                             solver = SequentialSolverWithProgress(
                                 timeout=max_timeout,
                                 max_depth_unlimited=max_depth_unlimited,
+                                max_iterations=max_iterations_unlimited,
                                 verbose=False,
                                 progress_callback=progress_callback
                             )
@@ -199,7 +249,7 @@ def solve_stream():
                             'ida': lambda: IDAStarSolver(max_depth=max_depth_unlimited, verbose=False),
                             'pattern_astar': lambda: PatternAStarSolver(verbose=False),
                             'bidirectional': lambda: BidirectionalSolver(
-                                max_iterations=10000000,
+                                max_iterations=max_iterations_unlimited,
                                 timeout=max_timeout,
                                 verbose=False
                             ),
@@ -340,7 +390,13 @@ class GovernorSolverWithProgress(GovernorSolver):
         self.progress_callback(solver_name, 'starting', time.time() - start_time)
         solver_start = time.time()
         solver_instance = chosen_solver['solver']()
-        solution = self._solve_with_timeout(solver_instance, board, min(self.timeout * 0.7, 30.0), start_time)
+        # Устанавливаем timeout для решателя
+        if self.timeout > 600:
+            solver_timeout = self.timeout * 0.7
+        else:
+            solver_timeout = min(self.timeout * 0.7, 30.0)
+            
+        solution = self._solve_with_timeout(solver_instance, board, solver_timeout, start_time)
         solver_elapsed = time.time() - solver_start
         self.progress_callback(solver_name, 'completed' if solution else 'failed', solver_elapsed)
         
@@ -374,9 +430,10 @@ class GovernorSolverWithProgress(GovernorSolver):
             
             try:
                 solver_instance = solver_fn()
+                fallback_limit = (self.timeout - elapsed) * 0.5 if self.timeout > 600 else 20.0
                 solution = self._solve_with_timeout(
                     solver_instance, board,
-                    min(self.timeout - elapsed, 20.0),
+                    min(self.timeout - elapsed, fallback_limit),
                     start_time
                 )
                 solver_elapsed = time.time() - solver_start
@@ -393,8 +450,8 @@ class GovernorSolverWithProgress(GovernorSolver):
 
 class SequentialSolverWithProgress(SequentialSolver):
     """SequentialSolver с поддержкой callback прогресса."""
-    def __init__(self, timeout=300.0, verbose=False, max_depth_unlimited=None, progress_callback=None):
-        super().__init__(timeout=timeout, verbose=verbose, max_depth_unlimited=max_depth_unlimited)
+    def __init__(self, timeout=300.0, verbose=False, max_depth_unlimited=None, max_iterations=10000000, progress_callback=None):
+        super().__init__(timeout=timeout, verbose=verbose, max_depth_unlimited=max_depth_unlimited, max_iterations=max_iterations)
         self.progress_callback = progress_callback or (lambda *args, **kwargs: None)
     
     def solve(self, board):
@@ -411,7 +468,7 @@ class SequentialSolverWithProgress(SequentialSolver):
             ("Pattern A*", lambda: PatternAStarSolver(verbose=False).solve(board)),
             ("IDA*", lambda: IDAStarSolver(max_depth=self.max_depth_unlimited or 50, verbose=False).solve(board)),
             ("Bidirectional", lambda: BidirectionalSolver(
-                max_iterations=10000000,
+                max_iterations=self.max_iterations,
                 timeout=self.timeout - (time.time() - start_time) if self.timeout else None,
                 verbose=False
             ).solve(board)),
@@ -422,9 +479,9 @@ class SequentialSolverWithProgress(SequentialSolver):
                 max_depth=self.max_depth_unlimited or 50,
                 verbose=False
             ).solve(board)),
-            # Brute Force всегда получает минимум 1 час независимо от потраченного времени
+            # Brute Force всегда получает минимум 1 час или весь доступный timeout
             ("Brute Force", lambda: BruteForceSolver(
-                timeout=3600.0,  # Всегда минимум 1 час для Brute Force
+                timeout=max(3600.0, self.timeout),
                 max_depth=self.max_depth_unlimited or 50,
                 verbose=False
             ).solve(board)),
@@ -537,17 +594,15 @@ def solve():
             'peg_count': peg_count
         })
     
-    # Выбор решателя с учётом флага "Без ограничений"
-    # Если unlimited=True, устанавливаем очень большие значения timeout/max_depth
-    # Практически эквивалентно "без ограничений" (1 час = 3600 сек, глубина 1000 ходов)
-    max_timeout = 10800.0 if unlimited else 300.0  # 3 часа при unlimited, иначе 5 минут (увеличено для сложных позиций)
-    max_depth_unlimited = 1000 if unlimited else 50  # 1000 ходов при unlimited, иначе 50 (увеличено для позиций с большим количеством колышков)
+    # Рассчитываем лимиты на основе производительности
+    max_timeout, max_depth_unlimited, max_iterations_unlimited = calculate_solver_limits(unlimited)
     
     solvers = {
         'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
         'sequential': lambda: SequentialSolver(
             timeout=max_timeout,
             max_depth_unlimited=max_depth_unlimited,
+            max_iterations=max_iterations_unlimited,
             verbose=False
         ),  # Систематический перебор от простых к сложным
         'governor': lambda: GovernorSolver(
@@ -575,7 +630,7 @@ def solve():
         ),  # IDA* (экономия памяти)
         'pattern_astar': lambda: PatternAStarSolver(verbose=False),  # A* с Pattern Database
         'bidirectional': lambda: BidirectionalSolver(
-            max_iterations=10000000,  # Увеличено до 10 миллионов
+            max_iterations=max_iterations_unlimited,  # Увеличено до 1 млрд
             timeout=max_timeout,
             verbose=False
         ),  # Двунаправленный поиск с увеличенными параметрами
@@ -589,7 +644,7 @@ def solve():
             verbose=False
         ),  # Полный перебор с оценкой для сложных позиций
         'brute_force': lambda: BruteForceSolver(
-            timeout=max_timeout if max_timeout >= 3600 else 3600.0,  # Минимум 1 час для сложных позиций
+            timeout=max(3600.0, max_timeout),  # Минимум 1 час для сложных позиций
             max_depth=max_depth_unlimited or 50,
             verbose=False
         ),  # Полный перебор БЕЗ Pagoda pruning (последняя попытка)

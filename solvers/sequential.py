@@ -42,10 +42,11 @@ class SequentialSolver(BaseSolver):
     """
     
     def __init__(self, timeout: float = 300.0, verbose: bool = True, 
-                 max_depth_unlimited: int = None):
+                 max_depth_unlimited: int = None, max_iterations: int = 10000000):
         super().__init__(use_symmetry=True, verbose=verbose)
         self.timeout = timeout
         self.max_depth_unlimited = max_depth_unlimited or 1000
+        self.max_iterations = max_iterations
     
     def solve(self, board: BitBoard) -> Optional[List[Tuple[int, int, int]]]:
         """
@@ -93,7 +94,7 @@ class SequentialSolver(BaseSolver):
             
             # 8. Bidirectional (двунаправленный поиск)
             ("Bidirectional", lambda: BidirectionalSolver(
-                max_iterations=10000000,
+                max_iterations=self.max_iterations,
                 timeout=self.timeout - (time.time() - start_time) if self.timeout else None,
                 verbose=False
             ).solve(board)),
@@ -119,7 +120,7 @@ class SequentialSolver(BaseSolver):
             # 12. Brute Force (полный перебор БЕЗ Pagoda pruning - последняя попытка)
             # Гарантируем минимум 1 час независимо от потраченного времени
             ("Brute Force", lambda: BruteForceSolver(
-                timeout=3600.0,  # Всегда минимум 1 час для Brute Force
+                timeout=max(3600.0, self.timeout),  # Минимум 1 час или весь timeout
                 max_depth=self.max_depth_unlimited,
                 verbose=False
             ).solve(board)),

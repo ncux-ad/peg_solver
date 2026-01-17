@@ -73,7 +73,12 @@ class GovernorSolver(BaseSolver):
                 return self._try_fallbacks(board, analysis, chosen_solver['name'], start_time)
             
             # Устанавливаем локальный timeout для конкретного решателя (меньше общего)
-            solver_timeout = min(self.timeout * 0.7, 30.0)  # 70% от общего или 30 сек
+            if self.timeout > 600:
+                # Если общий timeout большой, даем решателю больше времени
+                solver_timeout = self.timeout * 0.7
+            else:
+                # Иначе ограничиваем 30 секундами для быстрого переключения
+                solver_timeout = min(self.timeout * 0.7, 30.0)
             
             # Запускаем с проверкой timeout
             solution = self._solve_with_timeout(solver_instance, board, solver_timeout, start_time)
@@ -295,10 +300,11 @@ class GovernorSolver(BaseSolver):
                     return None
                 
                 # Используем timeout для каждого fallback'а
+                fallback_limit = remaining_time * 0.5 if self.timeout > 600 else 20.0
                 solver_instance = solver_fn()
                 solution = self._solve_with_timeout(
                     solver_instance, board, 
-                    min(remaining_time, 20.0),  # Максимум 20 сек на fallback
+                    min(remaining_time, fallback_limit),
                     start_time
                 )
                 if solution:
