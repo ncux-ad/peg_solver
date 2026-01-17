@@ -22,7 +22,8 @@ from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
 from solvers import (
     DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver,
     ParallelBeamSolver, ParallelSolver, AStarSolver, IDAStarSolver,
-    PatternAStarSolver, ZobristDFSSolver, BidirectionalSolver, SequentialSolver
+    PatternAStarSolver, ZobristDFSSolver, BidirectionalSolver, SequentialSolver,
+    ExhaustiveSolver, BruteForceSolver
 )
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
@@ -46,12 +47,46 @@ for pos in ENGLISH_VALID_POSITIONS:
     VALID_COORDS.add((r, c))
 
 
+def get_modules_info():
+    """Возвращает информацию о доступных модулях оптимизации."""
+    modules = {
+        'cython': False,
+        'rust': False,
+        'numba': False
+    }
+    
+    # Проверка Cython
+    try:
+        from core.fast import USING_CYTHON
+        modules['cython'] = USING_CYTHON
+    except:
+        modules['cython'] = False
+    
+    # Проверка Rust
+    try:
+        from core.rust_fast import USING_RUST
+        modules['rust'] = USING_RUST
+    except:
+        modules['rust'] = False
+    
+    # Проверка Numba
+    try:
+        from heuristics.fast_pagoda import NUMBA_AVAILABLE
+        modules['numba'] = NUMBA_AVAILABLE
+    except:
+        modules['numba'] = False
+    
+    return modules
+
+
 @app.route('/')
 def index():
     """Главная страница."""
+    modules_info = get_modules_info()
     return render_template('index.html', 
                           implementation=get_implementation_info(),
-                          using_cython=USING_CYTHON)
+                          using_cython=USING_CYTHON,
+                          modules_info=modules_info)
 
 
 @app.route('/api/solve-stream', methods=['POST'])
@@ -102,8 +137,8 @@ def solve_stream():
             'peg_count': peg_count
         })
     
-    max_timeout = 3600.0 if unlimited else 120.0
-    max_depth_unlimited = 1000 if unlimited else 35
+    max_timeout = 10800.0 if unlimited else 300.0  # 3 часа при "Без ограничений", иначе 5 минут
+    max_depth_unlimited = 1000 if unlimited else 50  # Увеличено до 50 для позиций с большим количеством колышков
     
     # Создаём queue для передачи событий прогресса
     progress_queue = queue.Queue()
@@ -130,6 +165,8 @@ def solve_stream():
             # Запускаем решение в отдельном потоке
             def solve_in_thread():
                 nonlocal solution
+                start_time = None
+                solver_used = solver_type
                 try:
                     # Модифицируем решатели для поддержки callback
                     if solver_type in ['governor', 'sequential', 'hybrid']:
@@ -161,7 +198,11 @@ def solve_stream():
                             'astar': lambda: AStarSolver(verbose=False),
                             'ida': lambda: IDAStarSolver(max_depth=max_depth_unlimited, verbose=False),
                             'pattern_astar': lambda: PatternAStarSolver(verbose=False),
-                            'bidirectional': lambda: BidirectionalSolver(verbose=False),
+                            'bidirectional': lambda: BidirectionalSolver(
+                                max_iterations=10000000,
+                                timeout=max_timeout,
+                                verbose=False
+                            ),
                             'parallel': lambda: ParallelSolver(num_workers=4, verbose=False),
                             'parallel_beam': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, max_depth=max_depth_unlimited, verbose=False),
                         }
@@ -175,6 +216,7 @@ def solve_stream():
                     solution = solver.solve(board)
                     
                     elapsed = time.time() - start_time
+                    solver_used = solver_type
             
                     if solution:
                         # Форматируем решение
@@ -207,16 +249,20 @@ def solve_stream():
                             'success': False,
                             'error': 'Решение не найдено',
                             'peg_count': peg_count,
-                            'time': round(elapsed, 3)
+                            'time': round(elapsed, 3),
+                            'solver': solver_used
                         }
                         progress_queue.put(result_data)
                 except Exception as e:
                     import traceback
+                    elapsed = time.time() - start_time if start_time else 0
                     error_data = {
                         'type': 'result',
                         'success': False,
                         'error': f'Ошибка решателя: {str(e)}',
-                        'traceback': traceback.format_exc()
+                        'traceback': traceback.format_exc(),
+                        'solver': solver_used,
+                        'time': round(elapsed, 3)
                     }
                     progress_queue.put(error_data)
             
@@ -315,7 +361,8 @@ class GovernorSolverWithProgress(GovernorSolver):
             fallbacks.append(('Beam Search', lambda: BeamSolver(beam_width=300, verbose=False)))
         
         if failed_solver != 'IDA*':
-            fallbacks.append(('IDA*', lambda: IDAStarSolver(verbose=False)))
+            # Используем увеличенную глубину для сложных позиций
+            fallbacks.append(('IDA*', lambda: IDAStarSolver(max_depth=50, verbose=False)))
         
         for name, solver_fn in fallbacks:
             elapsed = time.time() - start_time
@@ -362,16 +409,33 @@ class SequentialSolverWithProgress(SequentialSolver):
             ("Zobrist DFS", lambda: ZobristDFSSolver(verbose=False, use_pagoda=False).solve(board)),
             ("A*", lambda: AStarSolver(verbose=False).solve(board)),
             ("Pattern A*", lambda: PatternAStarSolver(verbose=False).solve(board)),
-            ("IDA*", lambda: IDAStarSolver(max_depth=self.max_depth_unlimited, verbose=False).solve(board)),
-            ("Bidirectional", lambda: BidirectionalSolver(verbose=False).solve(board)),
+            ("IDA*", lambda: IDAStarSolver(max_depth=self.max_depth_unlimited or 50, verbose=False).solve(board)),
+            ("Bidirectional", lambda: BidirectionalSolver(
+                max_iterations=10000000,
+                timeout=self.timeout - (time.time() - start_time) if self.timeout else None,
+                verbose=False
+            ).solve(board)),
             ("Parallel DFS", lambda: ParallelSolver(num_workers=4, verbose=False).solve(board)),
             ("Parallel Beam", lambda: ParallelBeamSolver(beam_width=500, max_depth=self.max_depth_unlimited, num_workers=4, verbose=False).solve(board)),
+            ("Exhaustive Search", lambda: ExhaustiveSolver(
+                timeout=max(60.0, self.timeout - (time.time() - start_time)),
+                max_depth=self.max_depth_unlimited or 50,
+                verbose=False
+            ).solve(board)),
+            # Brute Force всегда получает минимум 1 час независимо от потраченного времени
+            ("Brute Force", lambda: BruteForceSolver(
+                timeout=3600.0,  # Всегда минимум 1 час для Brute Force
+                max_depth=self.max_depth_unlimited or 50,
+                verbose=False
+            ).solve(board)),
         ]
         
         for idx, (name, solver_fn) in enumerate(strategies, 1):
             elapsed = time.time() - start_time
-            if elapsed > self.timeout:
-                return None
+            # Для Brute Force всегда даём шанс, даже если timeout превышен
+            if name != "Brute Force" and elapsed > self.timeout:
+                self.progress_callback(name, 'failed', elapsed, len(strategies), idx)
+                continue  # Пропускаем этот решатель, но продолжаем для Brute Force
             
             self.progress_callback(name, 'starting', elapsed, len(strategies), idx)
             solver_start = time.time()
@@ -476,8 +540,8 @@ def solve():
     # Выбор решателя с учётом флага "Без ограничений"
     # Если unlimited=True, устанавливаем очень большие значения timeout/max_depth
     # Практически эквивалентно "без ограничений" (1 час = 3600 сек, глубина 1000 ходов)
-    max_timeout = 3600.0 if unlimited else 120.0  # 1 час при unlimited, иначе 120 сек
-    max_depth_unlimited = 1000 if unlimited else 35  # 1000 ходов при unlimited, иначе 35
+    max_timeout = 10800.0 if unlimited else 300.0  # 3 часа при unlimited, иначе 5 минут (увеличено для сложных позиций)
+    max_depth_unlimited = 1000 if unlimited else 50  # 1000 ходов при unlimited, иначе 50 (увеличено для позиций с большим количеством колышков)
     
     solvers = {
         'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
@@ -506,15 +570,29 @@ def solve():
         'zobrist_dfs': lambda: ZobristDFSSolver(verbose=False, use_pagoda=False),  # DFS с Zobrist Hashing
         'astar': lambda: AStarSolver(verbose=False),  # A* с эвристиками
         'ida': lambda: IDAStarSolver(
-            max_depth=max_depth_unlimited,
+            max_depth=max_depth_unlimited or 50,  # Увеличена глубина для сложных позиций
             verbose=False
         ),  # IDA* (экономия памяти)
         'pattern_astar': lambda: PatternAStarSolver(verbose=False),  # A* с Pattern Database
-        'bidirectional': lambda: BidirectionalSolver(verbose=False),  # Двунаправленный поиск
+        'bidirectional': lambda: BidirectionalSolver(
+            max_iterations=10000000,  # Увеличено до 10 миллионов
+            timeout=max_timeout,
+            verbose=False
+        ),  # Двунаправленный поиск с увеличенными параметрами
         'hybrid': lambda: HybridSolver(
             timeout=max_timeout, 
             verbose=False
         ),  # Timeout с учётом флага unlimited
+        'exhaustive': lambda: ExhaustiveSolver(
+            timeout=max_timeout,
+            max_depth=max_depth_unlimited or 50,
+            verbose=False
+        ),  # Полный перебор с оценкой для сложных позиций
+        'brute_force': lambda: BruteForceSolver(
+            timeout=max_timeout if max_timeout >= 3600 else 3600.0,  # Минимум 1 час для сложных позиций
+            max_depth=max_depth_unlimited or 50,
+            verbose=False
+        ),  # Полный перебор БЕЗ Pagoda pruning (последняя попытка)
     }
     
     # По умолчанию используем LookupSolver (быстрее для известных позиций)
@@ -538,7 +616,8 @@ def solve():
             'success': False,
             'error': 'Решение не найдено',
             'peg_count': peg_count,
-            'time': round(elapsed, 3)
+            'time': round(elapsed, 3),
+            'solver': solver_type
         })
     
     # Форматируем решение
@@ -561,6 +640,47 @@ def solve():
         'peg_count': peg_count,
         'time': round(elapsed, 3),
         'solver': solver_type
+    })
+
+
+@app.route('/api/modules', methods=['GET'])
+def get_modules():
+    """API для получения информации о доступных модулях оптимизации."""
+    modules_info = get_modules_info()
+    
+    # Получаем детальную информацию
+    info = {
+        'cython': {
+            'available': modules_info['cython'],
+            'name': 'Cython',
+            'description': 'Компилированные расширения для критических операций',
+            'speedup': '~26x быстрее Python',
+            'status': '✅ Активен' if modules_info['cython'] else '❌ Не установлен'
+        },
+        'rust': {
+            'available': modules_info['rust'],
+            'name': 'Rust',
+            'description': 'Модуль на Rust для максимальной производительности',
+            'speedup': '~2-10x быстрее Cython',
+            'status': '✅ Активен' if modules_info['rust'] else '❌ Не установлен'
+        },
+        'numba': {
+            'available': modules_info['numba'],
+            'name': 'Numba JIT',
+            'description': 'JIT компиляция для эвристик и функций оценки',
+            'speedup': '~5-10x быстрее Python',
+            'status': '✅ Активен' if modules_info['numba'] else '❌ Не установлен'
+        }
+    }
+    
+    return jsonify({
+        'success': True,
+        'modules': info,
+        'summary': {
+            'total': 3,
+            'available': sum(1 for m in modules_info.values() if m),
+            'missing': [k for k, v in modules_info.items() if not v]
+        }
     })
 
 
@@ -600,9 +720,13 @@ def validate():
     # Проверка ходов
     moves_count = len(board.get_moves())
     
+    # Теоретическое количество ходов до решения: N колышков -> N-1 ходов до 1 колышка
+    moves_to_solution = max(0, peg_count - 1)
+    
     return jsonify({
         'peg_count': peg_count,
         'moves_available': moves_count,
+        'moves_to_solution': moves_to_solution,
         'is_solvable': is_solvable,
         'pagoda_value': pagoda,
         'min_pagoda': MIN_PAGODA_ANY_POS,

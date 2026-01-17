@@ -36,16 +36,27 @@ Pygments>=2.0.0
 # Установка
 # ===================================
 #
+# ВАЖНО: Перед установкой Python зависимостей установите системные пакеты!
+#
+# Ubuntu/Debian:
+#   sudo apt-get update && sudo apt-get install -y python3-dev build-essential
+#
+# Fedora/RHEL:
+#   sudo dnf install -y python3-devel gcc gcc-c++ make
+#
 # 1. Создать venv:
 #    python -m venv venv
 #    source venv/bin/activate  # Linux/Mac
 #    venv\Scripts\activate     # Windows
 #
-# 2. Установить зависимости:
+# 2. Установить Python зависимости:
 #    pip install -r requirements.txt
 #
-# 3. Скомпилировать Cython (опционально, для ускорения):
+# 3. Скомпилировать Cython (опционально, для ускорения ~26x):
 #    python setup.py build_ext --inplace
 #
 # 4. Проверить:
 #    python -c "from core.fast import USING_CYTHON; print(f'Cython: {USING_CYTHON}')"
+#
+# ИЛИ используйте единый скрипт:
+#    ./build_all.sh  # Установит всё автоматически

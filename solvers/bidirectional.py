@@ -6,6 +6,7 @@ Bidirectional Search — двунаправленный поиск.
 
 from typing import List, Tuple, Optional, Dict
 from collections import deque
+import time
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, ENGLISH_GOAL, ENGLISH_VALID_POSITIONS
@@ -23,10 +24,12 @@ class BidirectionalSolver(BaseSolver):
     Встречаются посередине — O(b^(d/2)) вместо O(b^d).
     """
     
-    def __init__(self, max_iterations: int = 100000, use_symmetry: bool = True,
-                 verbose: bool = False):
+    def __init__(self, max_iterations: int = 1000000, use_symmetry: bool = True,
+                 verbose: bool = False, timeout: float = None):
         super().__init__(use_symmetry, verbose)
         self.max_iterations = max_iterations
+        self.timeout = timeout
+        self.start_time = None
     
     def solve(self, board: BitBoard, 
               target: BitBoard = None) -> Optional[List[Tuple[int, int, int]]]:
@@ -38,6 +41,7 @@ class BidirectionalSolver(BaseSolver):
             target: Целевая позиция (если None - любое состояние с 1 колышком)
         """
         self.stats = SolverStats()
+        self.start_time = time.time() if self.timeout else None
         
         # Если target не указан, ищем любое состояние с 1 колышком
         # Используем специальный флаг для проверки
@@ -63,6 +67,11 @@ class BidirectionalSolver(BaseSolver):
         while forward_queue or backward_queue:
             iterations += 1
             self.stats.nodes_visited = iterations
+            
+            # Проверка timeout
+            if self.start_time and time.time() - self.start_time > self.timeout:
+                self._log(f"Timeout ({self.timeout}s). {self.stats}")
+                return None
             
             if iterations > self.max_iterations:
                 self._log(f"Max iterations reached. {self.stats}")

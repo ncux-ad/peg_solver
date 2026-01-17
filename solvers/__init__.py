@@ -23,6 +23,8 @@ from .pattern_astar import PatternAStarSolver
 from .governor import GovernorSolver
 from .lookup import LookupSolver
 from .sequential import SequentialSolver
+from .exhaustive import ExhaustiveSolver
+from .brute_force import BruteForceSolver
 
 __all__ = [
     'DFSSolver',
@@ -38,4 +40,6 @@ __all__ = [
     'GovernorSolver',
     'LookupSolver',
     'SequentialSolver',
+    'ExhaustiveSolver',
+    'BruteForceSolver',
 ]

@@ -92,7 +92,11 @@ class SequentialSolver(BaseSolver):
             ("IDA*", lambda: IDAStarSolver(max_depth=self.max_depth_unlimited, verbose=False).solve(board)),
             
             # 8. Bidirectional (двунаправленный поиск)
-            ("Bidirectional", lambda: BidirectionalSolver(verbose=False).solve(board)),
+            ("Bidirectional", lambda: BidirectionalSolver(
+                max_iterations=10000000,
+                timeout=self.timeout - (time.time() - start_time) if self.timeout else None,
+                verbose=False
+            ).solve(board)),
             
             # 9. Parallel DFS (многопоточный для глубоких позиций)
             ("Parallel DFS", lambda: ParallelSolver(num_workers=4, verbose=False).solve(board)),
@@ -104,16 +108,34 @@ class SequentialSolver(BaseSolver):
                 num_workers=4,
                 verbose=False
             ).solve(board)),
+            
+            # 11. Exhaustive Search (полный перебор с оценкой - для самых сложных позиций)
+            ("Exhaustive Search", lambda: ExhaustiveSolver(
+                timeout=max(60.0, self.timeout - (time.time() - start_time)),
+                max_depth=self.max_depth_unlimited,
+                verbose=False
+            ).solve(board)),
+            
+            # 12. Brute Force (полный перебор БЕЗ Pagoda pruning - последняя попытка)
+            # Гарантируем минимум 1 час независимо от потраченного времени
+            ("Brute Force", lambda: BruteForceSolver(
+                timeout=3600.0,  # Всегда минимум 1 час для Brute Force
+                max_depth=self.max_depth_unlimited,
+                verbose=False
+            ).solve(board)),
         ]
         
         # Перебираем решатели последовательно
         for idx, (name, solver_fn) in enumerate(strategies, 1):
-            # Проверяем timeout перед каждым решателем
+            # Проверяем timeout перед каждым решателем (кроме Brute Force - он всегда получает время)
             elapsed = time.time() - start_time
-            if elapsed > self.timeout:
-                self._log(f"Timeout ({self.timeout}s) достигнут")
-                self.stats.time_elapsed = elapsed
-                return None
+            if name != "Brute Force" and elapsed > self.timeout:
+                self._log(f"Timeout ({self.timeout}s) достигнут, пропускаем {name}")
+                continue  # Пропускаем этот решатель, но продолжаем для Brute Force
+            
+            # Для Brute Force всегда даём шанс, даже если timeout превышен
+            if name == "Brute Force" and elapsed > self.timeout:
+                self._log(f"Timeout ({self.timeout}s) достигнут, но даём Brute Force шанс (минимум 1 час)")
             
             self._log(f"[{idx}/{len(strategies)}] Пробуем {name}...")
             
@@ -141,6 +163,7 @@ class SequentialSolver(BaseSolver):
         # Все решатели попробованы, решения не найдено
         self.stats.time_elapsed = time.time() - start_time
         self._log(f"✗ Решение не найдено после перебора всех {len(strategies)} решателей ({self.stats.time_elapsed:.2f}s)")
+        self._log(f"Общее время: {self.stats.time_elapsed:.2f}s, timeout был: {self.timeout}s")
         return None
     
     def _validate_solution(self, initial_board: BitBoard, solution: List[Tuple[int, int, int]]) -> bool:

@@ -3,6 +3,11 @@ setup.py
 
 Сборка Cython расширений.
 
+ВАЖНО: Перед компиляцией установите системные зависимости:
+  Ubuntu/Debian: sudo apt-get install python3-dev build-essential
+  Fedora/RHEL: sudo dnf install python3-devel gcc gcc-c++ make
+  Arch: sudo pacman -S python base-devel
+
 Использование:
     python setup.py build_ext --inplace
 """

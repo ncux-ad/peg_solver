@@ -234,7 +234,7 @@ class GovernorSolver(BaseSolver):
             if peg_count > 20:
                 return {
                     'name': 'IDA*',
-                    'solver': lambda: IDAStarSolver(verbose=False),
+                    'solver': lambda: IDAStarSolver(max_depth=50, verbose=False),  # Увеличена глубина для сложных позиций
                     'reason': f'Сложная позиция ({peg_count} колышков), IDA* эффективен по памяти'
                 }
             
@@ -267,7 +267,7 @@ class GovernorSolver(BaseSolver):
             fallbacks.append(('Beam Search', lambda: BeamSolver(beam_width=300, verbose=False)))
         
         if failed_solver != 'IDA*':
-            fallbacks.append(('IDA*', lambda: IDAStarSolver(verbose=False)))
+            fallbacks.append(('IDA*', lambda: IDAStarSolver(max_depth=50, verbose=False)))  # Увеличена глубина для сложных позиций
         
         if failed_solver != 'Pattern A*':
             try:

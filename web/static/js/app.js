@@ -27,6 +27,10 @@ let trainingMode = false; // Режим обучения
 let pegSamples = []; // Примеры колышков [[row, col], ...]
 let holeSamples = []; // Примеры пустых мест [[row, col], ...]
 
+// Recent Boards
+const RECENT_BOARDS_KEY = 'peg_solver_recent_boards';
+const MAX_RECENT_BOARDS = 10;
+
 // Описания решателей
 const solverDescriptions = {
     'lookup': {
@@ -119,8 +123,68 @@ const solverDescriptions = {
         completeness: '✅ Полный',
         speed: '⭐⭐⭐⭐',
         use: 'Автоматический выбор'
+    },
+    'exhaustive': {
+        name: '🔍 Exhaustive',
+        description: 'Полный перебор всех возможных путей с оценкой промежуточных состояний. Самый медленный, но самый надёжный для сложных позиций. Может занять много времени.',
+        completeness: '✅ Полный',
+        speed: '⭐',
+        use: 'Самые сложные позиции (может занять много времени)'
+    },
+    'brute_force': {
+        name: '💪 Brute Force',
+        description: 'Максимально агрессивный поиск БЕЗ Pagoda pruning. Используется только когда все остальные методы не работают. Может работать ОЧЕНЬ долго (30+ минут).',
+        completeness: '✅ Полный',
+        speed: '🐌',
+        use: 'Последняя попытка для нерешаемых позиций (может занять 30+ минут)'
     }
 };
+
+// Toast уведомления
+function showToast(message, type = 'info', title = null, duration = 0) {
+    /**
+     * Показывает красивое toast-уведомление.
+     * 
+     * @param {string} message - Текст сообщения
+     * @param {string} type - Тип: 'error', 'warning', 'success', 'info'
+     * @param {string|null} title - Заголовок (опционально)
+     * @param {number} duration - Длительность показа в мс (0 = без автоскрытия, показывается до закрытия пользователем)
+     */
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    const icons = {
+        error: '❌',
+        warning: '⚠️',
+        success: '✅',
+        info: 'ℹ️'
+    };
+    
+    toast.innerHTML = `
+        <div class="toast-icon">${icons[type] || icons.info}</div>
+        <div class="toast-content">
+            ${title ? `<div class="toast-title">${title}</div>` : ''}
+            <div class="toast-message">${message}</div>
+        </div>
+        <button class="toast-close" onclick="this.closest('.toast').remove()">×</button>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Автоматическое скрытие только если duration > 0
+    if (duration > 0) {
+        setTimeout(() => {
+            toast.classList.add('hiding');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+    // Если duration = 0, уведомление остаётся до закрытия пользователем
+    
+    return toast;
+}
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
@@ -133,7 +197,125 @@ document.addEventListener('DOMContentLoaded', () => {
         solverSelect.addEventListener('change', updateSolverDescription);
         updateSolverDescription(); // Показываем описание для выбранного решателя
     }
+    
+    // Обработчик Enter для поля ввода координат
+    const notationInput = document.getElementById('board-notation-input');
+    if (notationInput) {
+        notationInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                loadBoardFromNotation();
+            }
+        });
+    }
+    
+    // Загружаем информацию о модулях
+    loadModulesInfo();
+    
+    // Загружаем список недавних досок
+    loadRecentBoards();
+    
+    // Проверяем решения для недавних досок
+    checkBoardsForSolutions();
 });
+
+async function loadModulesInfo() {
+    /**
+     * Загружает и отображает информацию о доступных модулях оптимизации.
+     */
+    try {
+        const response = await fetch('/api/modules');
+        const data = await response.json();
+        
+        if (data.success) {
+            displayModulesInfo(data.modules, data.summary);
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке информации о модулях:', error);
+    }
+}
+
+function displayModulesInfo(modules, summary) {
+    /**
+     * Отображает информацию о модулях в info-panel и footer.
+     */
+    // Отображение в info-panel (детальное)
+    const modulesListDiv = document.getElementById('modules-list');
+    if (modulesListDiv) {
+        modulesListDiv.innerHTML = '';
+        
+        const moduleOrder = ['cython', 'rust', 'numba'];
+        
+        for (const moduleKey of moduleOrder) {
+            const module = modules[moduleKey];
+            if (!module) continue;
+            
+            const item = document.createElement('div');
+            item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0;';
+            
+            const nameDiv = document.createElement('div');
+            nameDiv.style.cssText = 'display: flex; align-items: center; gap: 0.5rem;';
+            
+            const icon = document.createElement('span');
+            icon.textContent = module.available ? '✅' : '❌';
+            icon.style.cssText = 'font-size: 0.875rem;';
+            
+            const name = document.createElement('span');
+            name.textContent = module.name;
+            name.style.cssText = `font-weight: 500; color: ${module.available ? 'var(--success)' : 'var(--danger)'};`;
+            
+            nameDiv.appendChild(icon);
+            nameDiv.appendChild(name);
+            
+            const speedup = document.createElement('span');
+            speedup.textContent = module.speedup;
+            speedup.style.cssText = 'font-size: 0.7rem; color: var(--text-secondary);';
+            
+            item.appendChild(nameDiv);
+            item.appendChild(speedup);
+            
+            item.title = module.description;
+            item.style.cursor = 'help';
+            
+            modulesListDiv.appendChild(item);
+        }
+        
+        // Добавляем общую информацию
+        if (summary.available < summary.total) {
+            const summaryDiv = document.createElement('div');
+            summaryDiv.style.cssText = 'margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--cell-border); font-size: 0.7rem; color: var(--text-secondary);';
+            summaryDiv.textContent = `Доступно: ${summary.available}/${summary.total} модулей`;
+            modulesListDiv.appendChild(summaryDiv);
+        }
+    }
+    
+    // Отображение в footer (компактное)
+    const modulesInfoDiv = document.getElementById('modules-info');
+    if (modulesInfoDiv) {
+        modulesInfoDiv.innerHTML = '';
+        
+        const moduleOrder = ['cython', 'rust', 'numba'];
+        
+        for (const moduleKey of moduleOrder) {
+            const module = modules[moduleKey];
+            if (!module) continue;
+            
+            const badge = document.createElement('span');
+            badge.className = 'module-badge';
+            badge.title = `${module.name}: ${module.description} (${module.speedup})`;
+            
+            if (module.available) {
+                badge.classList.add('module-available');
+                badge.innerHTML = `✅ ${module.name}`;
+            } else {
+                badge.classList.add('module-unavailable');
+                badge.innerHTML = `❌ ${module.name}`;
+            }
+            
+            modulesInfoDiv.appendChild(badge);
+        }
+    }
+}
 
 function updateSolverDescription() {
     const solverSelect = document.getElementById('solver-select');
@@ -384,12 +566,138 @@ function copyBoardNotation() {
                     btn.classList.remove('copied');
                 }, 2000);
             } else {
-                alert('Используйте Ctrl+C для копирования');
+                showToast('Используйте Ctrl+C (или Cmd+C на Mac) для копирования', 'info', 'Копирование');
             }
         } catch (err) {
             console.error('Failed to copy:', err);
-            alert('Используйте Ctrl+C для копирования');
+            showToast('Используйте Ctrl+C (или Cmd+C на Mac) для копирования', 'info', 'Копирование');
         }
+    }
+}
+
+function parseBoardNotation(notation) {
+    /**
+     * Парсит координатное описание доски.
+     * Формат: "A1 B2 C3 D4(hole) E5..." где:
+     * - A1, B2, C3 - колышки (pegs)
+     * - D4(hole), E5(hole) - пустые места (holes)
+     * 
+     * Возвращает: { pegs: [[row, col], ...], holes: [[row, col], ...] }
+     */
+    const pegs = [];
+    const holes = [];
+    
+    if (!notation || notation.trim() === '') {
+        return { pegs, holes };
+    }
+    
+    // Разбиваем по пробелам и фильтруем пустые строки
+    const parts = notation.trim().split(/\s+/).filter(p => p.length > 0);
+    
+    for (const part of parts) {
+        // Проверяем формат координаты: буква + цифра + опционально (hole)
+        const match = part.match(/^([A-G])([1-7])(\(hole\))?$/i);
+        
+        if (match) {
+            const letter = match[1].toUpperCase();
+            const number = parseInt(match[2], 10);
+            const isHole = match[3] !== undefined;
+            
+            // Преобразуем в индексы (A=0, B=1, ..., G=6; 1=0, 2=1, ..., 7=6)
+            const col = letter.charCodeAt(0) - 65; // A=0, B=1, ..., G=6
+            const row = number - 1; // 1=0, 2=1, ..., 7=6
+            
+            // Проверяем валидность координат
+            if (0 <= row && row < 7 && 0 <= col && col < 7) {
+                if (isHole) {
+                    holes.push([row, col]);
+                } else {
+                    pegs.push([row, col]);
+                }
+            } else {
+                console.warn(`Некорректные координаты: ${part}`);
+            }
+        } else {
+            console.warn(`Не удалось распарсить: ${part}`);
+        }
+    }
+    
+    return { pegs, holes };
+}
+
+function loadBoardFromNotation() {
+    /**
+     * Загружает доску из координатного описания.
+     */
+    const input = document.getElementById('board-notation-input');
+    if (!input) return;
+    
+        const notation = input.value.trim();
+        if (!notation) {
+            showToast('Введите координатное описание доски в поле выше.', 'warning', 'Пустое поле');
+            return;
+        }
+    
+    try {
+        const { pegs, holes } = parseBoardNotation(notation);
+        
+        if (pegs.length === 0 && holes.length === 0) {
+            showToast(
+                'Проверьте формат координат. Пример: C1 D1 F1 C2 E2 G2 A3 B3 C3 D3 E3 F3 G3 A4 C4 E4 G4 A5 B5 C5 D5 E5 F5 G5 A6 C6 E6 B7 C7 D7 E7 E1(hole)',
+                'error',
+                'Не удалось распознать координаты',
+                8000
+            );
+            return;
+        }
+        
+        // Очищаем доску
+        clearBoard();
+        
+        // Применяем колышки
+        for (const [row, col] of pegs) {
+            const key = `${row},${col}`;
+            if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+                boardState[key] = 'peg';
+                const cell = getCell(row, col);
+                cell.classList.remove('empty', 'hole');
+                cell.classList.add('peg');
+            }
+        }
+        
+        // Применяем пустые места
+        for (const [row, col] of holes) {
+            const key = `${row},${col}`;
+            if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+                // Если там уже есть колышек, заменяем на пустое место
+                boardState[key] = 'hole';
+                const cell = getCell(row, col);
+                cell.classList.remove('empty', 'peg');
+                cell.classList.add('hole');
+            }
+        }
+        
+        // Обновляем статистику и представление
+        updateStats();
+        hideSolution();
+        
+        // Показываем сообщение об успехе
+        const message = `Загружено: ${pegs.length} колышков, ${holes.length} пустых мест`;
+        console.log(message);
+        
+        // Опционально: можно показать временное уведомление
+        const inputContainer = input.closest('.notation-container');
+        if (inputContainer) {
+            const successMsg = document.createElement('div');
+            successMsg.style.cssText = 'color: var(--success); font-size: 0.75rem; margin-top: 0.25rem;';
+            successMsg.textContent = `✅ ${message}`;
+            inputContainer.appendChild(successMsg);
+            setTimeout(() => successMsg.remove(), 3000);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке доски:', error);
+        showToast(error.message || 'Произошла ошибка при загрузке доски', 'error', 'Ошибка');
     }
 }
 
@@ -411,6 +719,12 @@ async function updateStats() {
         
         document.getElementById('moves-available').textContent = data.moves_available;
         
+        // Отображаем теоретическое количество ходов до решения (N-1)
+        const movesToSolutionEl = document.getElementById('moves-to-solution');
+        if (movesToSolutionEl) {
+            movesToSolutionEl.textContent = data.moves_to_solution || (pegs.length > 0 ? pegs.length - 1 : 0);
+        }
+        
         const indicator = document.getElementById('solvable-indicator');
         indicator.querySelector('.stat-value').textContent = data.is_solvable ? '✓' : '✗';
         indicator.className = `stat ${data.is_solvable ? 'solvable' : 'unsolvable'}`;
@@ -419,6 +733,14 @@ async function updateStats() {
     } catch (error) {
         console.error('Error validating:', error);
     }
+    
+    // Сохраняем доску в недавние (с задержкой)
+    clearTimeout(window.saveBoardTimeout);
+    window.saveBoardTimeout = setTimeout(() => {
+        if (typeof saveCurrentBoard === 'function') {
+            saveCurrentBoard();
+        }
+    }, 2000);
 }
 
 async function solve() {
@@ -476,7 +798,25 @@ async function solve() {
                                 if (data.success) {
                                     showSolution(data);
                                 } else {
-                                    alert(`Ошибка: ${data.error}`);
+                                    // Красивое сообщение об ошибке с информацией о решателе и времени
+                                    const errorMessage = data.error || 'Решение не найдено';
+                                    const solverName = data.solver ? (solverDescriptions[data.solver]?.name || data.solver) : 'Неизвестный решатель';
+                                    const timeStr = data.time ? `${data.time.toFixed(2)}с` : '';
+                                    const timeInfo = timeStr ? ` (${timeStr})` : '';
+                                    
+                                    if (errorMessage.includes('не найдено') || errorMessage.includes('не найдено')) {
+                                        showToast(
+                                            `Попробуйте другой решатель или включите "Без ограничений" для более глубокого поиска.${timeInfo}`,
+                                            'warning',
+                                            `Решение не найдено (${solverName})`
+                                        );
+                                    } else {
+                                        showToast(
+                                            `${errorMessage}${timeInfo}`,
+                                            'error',
+                                            `Ошибка (${solverName})`
+                                        );
+                                    }
                                 }
                                 loading.style.display = 'none';
                                 if (showProgress) {
@@ -492,7 +832,7 @@ async function solve() {
             }
         } catch (error) {
             console.error('Error solving:', error);
-            alert('Ошибка при решении');
+            showToast('Произошла ошибка при попытке найти решение. Проверьте подключение к серверу.', 'error', 'Ошибка соединения');
             loading.style.display = 'none';
             if (showProgress) {
                 progressContainer.style.display = 'none';
@@ -512,11 +852,29 @@ async function solve() {
             if (data.success) {
                 showSolution(data);
             } else {
-                alert(`Ошибка: ${data.error}`);
+                // Красивое сообщение об ошибке с информацией о решателе и времени
+                const errorMessage = data.error || 'Решение не найдено';
+                const solverName = data.solver ? (solverDescriptions[data.solver]?.name || data.solver) : 'Неизвестный решатель';
+                const timeStr = data.time ? `${data.time.toFixed(2)}с` : '';
+                const timeInfo = timeStr ? ` (${timeStr})` : '';
+                
+                if (errorMessage.includes('не найдено') || errorMessage.includes('не найдено')) {
+                    showToast(
+                        `Попробуйте другой решатель или включите "Без ограничений" для более глубокого поиска.${timeInfo}`,
+                        'warning',
+                        `Решение не найдено (${solverName})`
+                    );
+                } else {
+                    showToast(
+                        `${errorMessage}${timeInfo}`,
+                        'error',
+                        `Ошибка (${solverName})`
+                    );
+                }
             }
         } catch (error) {
             console.error('Error solving:', error);
-            alert('Ошибка при решении');
+            showToast('Произошла ошибка при попытке найти решение. Проверьте подключение к серверу.', 'error', 'Ошибка соединения');
         } finally {
             loading.style.display = 'none';
         }
@@ -597,8 +955,12 @@ function showSolution(data) {
     const section = document.getElementById('solution-section');
     section.style.display = 'block';
     
+    // Форматируем название решателя
+    const solverName = solverDescriptions[data.solver]?.name || data.solver || 'Неизвестный';
+    const timeStr = typeof data.time === 'number' ? data.time.toFixed(2) : data.time || '?';
+    
     document.getElementById('solution-stats').textContent = 
-        `${data.move_count} ходов • ${data.time}с • ${data.solver}`;
+        `${data.move_count} ходов • ${timeStr}с • ${solverName}`;
     
     const movesList = document.getElementById('moves-list');
     movesList.innerHTML = '';
@@ -617,6 +979,14 @@ function showSolution(data) {
     }
     
     section.scrollIntoView({ behavior: 'smooth' });
+    
+    // Показываем toast-уведомление с информацией о решателе и времени
+    const solverDisplayName = solverDescriptions[data.solver]?.name || data.solver || 'Неизвестный решатель';
+    showToast(
+        `Найдено решение из ${data.move_count} ходов за ${timeStr} секунд`,
+        'success',
+        `✅ Решение найдено (${solverDisplayName})`
+    );
 }
 
 function hideSolution() {
@@ -849,13 +1219,13 @@ async function recognizeScreenshot(imageData, useSamples = false) {
             const msg = useSamples ? 
                 `Распознано с примерами: ${data.peg_count} колышков` :
                 `Распознано: ${data.peg_count} колышков. Если неверно - используйте режим обучения.`;
-            alert(msg);
+            showToast(msg, 'success', 'Распознавание завершено');
         } else {
-            alert(`Ошибка: ${data.error}`);
+            showToast(data.error || 'Не удалось распознать позицию', 'error', 'Ошибка распознавания');
         }
     } catch (error) {
         console.error('Error recognizing:', error);
-        alert('Ошибка при распознавании');
+        showToast('Произошла ошибка при распознавании изображения', 'error', 'Ошибка');
     } finally {
         loading.style.display = 'none';
         loading.querySelector('p').textContent = 'Поиск решения...';
@@ -936,7 +1306,11 @@ function startTrainingMode() {
         return false;
     };
     
-    alert('Режим обучения:\n• Левый клик на скриншоте = отметить колышек\n• Правый клик = отметить пустое место\n• Клик ещё раз = снять отметку\n• Затем нажмите "Распознать с примерами"');
+    showToast(
+        '• Левый клик на скриншоте = отметить колышек\n• Правый клик = отметить пустое место\n• Клик ещё раз = снять отметку\n• Затем нажмите "Распознать с примерами"',
+        'info',
+        'Режим обучения'
+    );
 }
 
 function recognizeWithSamples() {
@@ -947,4 +1321,284 @@ function recognizeWithSamples() {
     loading.style.display = 'flex';
     
     recognizeScreenshot(screenshotImageData, true);
+}
+
+// Recent Boards Functions
+function getRecentBoards() {
+    try {
+        const stored = localStorage.getItem(RECENT_BOARDS_KEY);
+        return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        console.error('Error loading recent boards:', e);
+        return [];
+    }
+}
+
+function saveRecentBoards(boards) {
+    try {
+        localStorage.setItem(RECENT_BOARDS_KEY, JSON.stringify(boards));
+    } catch (e) {
+        console.error('Error saving recent boards:', e);
+    }
+}
+
+function saveCurrentBoard() {
+    const pegs = getPegs();
+    const holes = [];
+    
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            if (boardState[key] === 'hole') {
+                holes.push([row, col]);
+            }
+        }
+    }
+    
+    if (pegs.length === 0) return; // Не сохраняем пустые доски
+    
+    const boardData = {
+        pegs: pegs,
+        holes: holes,
+        notation: getBoardNotation(),
+        timestamp: Date.now(),
+        pegCount: pegs.length
+    };
+    
+    let boards = getRecentBoards();
+    
+    // Удаляем дубликаты (по координатам)
+    const boardKey = JSON.stringify({ 
+        pegs: pegs.sort((a, b) => a[0] - b[0] || a[1] - b[1]), 
+        holes: holes.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    });
+    boards = boards.filter(b => {
+        const bPegs = (b.pegs || []).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const bHoles = (b.holes || []).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const bKey = JSON.stringify({ pegs: bPegs, holes: bHoles });
+        return bKey !== boardKey;
+    });
+    
+    // Добавляем в начало
+    boards.unshift(boardData);
+    
+    // Ограничиваем количество
+    boards = boards.slice(0, MAX_RECENT_BOARDS);
+    
+    saveRecentBoards(boards);
+    loadRecentBoards();
+}
+
+function loadRecentBoards() {
+    const boards = getRecentBoards();
+    const container = document.getElementById('recent-boards-list');
+    if (!container) return;
+    
+    if (boards.length === 0) {
+        container.innerHTML = '<div style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; padding: 1rem;">Нет сохранённых досок</div>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    for (const board of boards) {
+        const item = createRecentBoardItem(board);
+        container.appendChild(item);
+    }
+}
+
+function createRecentBoardItem(board) {
+    const item = document.createElement('div');
+    item.className = 'recent-board-item';
+    
+    // Создаём миниатюру
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'recent-board-thumbnail';
+    
+    // Создаём сетку 7x7
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const cell = document.createElement('div');
+            cell.className = 'recent-board-thumbnail-cell';
+            
+            const peg = board.pegs.find(p => p[0] === row && p[1] === col);
+            const hole = (board.holes || []).find(h => h[0] === row && h[1] === col);
+            
+            if (peg) {
+                cell.classList.add('peg');
+            } else if (hole) {
+                cell.classList.add('hole');
+            } else {
+                cell.classList.add('empty');
+            }
+            
+            thumbnail.appendChild(cell);
+        }
+    }
+    
+    // Информация о доске
+    const info = document.createElement('div');
+    info.className = 'recent-board-info';
+    
+    const title = document.createElement('div');
+    title.className = 'recent-board-title';
+    title.textContent = board.notation ? board.notation.substring(0, 40) + (board.notation.length > 40 ? '...' : '') : `Доска (${board.pegCount} колышков)`;
+    
+    const meta = document.createElement('div');
+    meta.className = 'recent-board-meta';
+    
+    const pegCount = document.createElement('span');
+    pegCount.textContent = `${board.pegCount} колышков`;
+    
+    const date = document.createElement('span');
+    const dateObj = new Date(board.timestamp);
+    date.textContent = dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    
+    meta.appendChild(pegCount);
+    meta.appendChild(date);
+    
+    // Проверяем, есть ли решение в lookup
+    if (board.hasSolution) {
+        const badge = document.createElement('span');
+        badge.className = 'recent-board-badge solved';
+        badge.textContent = '✅ Решение есть';
+        meta.appendChild(badge);
+    }
+    
+    info.appendChild(title);
+    info.appendChild(meta);
+    
+    // Действия
+    const actions = document.createElement('div');
+    actions.className = 'recent-board-actions';
+    
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'recent-board-action';
+    loadBtn.innerHTML = '📥';
+    loadBtn.title = 'Загрузить доску';
+    loadBtn.onclick = (e) => {
+        e.stopPropagation();
+        loadBoardFromRecent(board);
+    };
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'recent-board-action';
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.title = 'Удалить';
+    deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteRecentBoard(board);
+    };
+    
+    actions.appendChild(loadBtn);
+    actions.appendChild(deleteBtn);
+    
+    // Клик по всей карточке загружает доску
+    item.onclick = () => loadBoardFromRecent(board);
+    
+    item.appendChild(thumbnail);
+    item.appendChild(info);
+    item.appendChild(actions);
+    
+    return item;
+}
+
+async function loadBoardFromRecent(board) {
+    clearBoard();
+    
+    // Загружаем колышки
+    for (const [row, col] of board.pegs || []) {
+        const key = `${row},${col}`;
+        if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+            boardState[key] = 'peg';
+            const cell = getCell(row, col);
+            cell.classList.remove('empty', 'hole');
+            cell.classList.add('peg');
+        }
+    }
+    
+    // Загружаем пустые места
+    for (const [row, col] of board.holes || []) {
+        const key = `${row},${col}`;
+        if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+            boardState[key] = 'hole';
+            const cell = getCell(row, col);
+            cell.classList.remove('empty', 'peg');
+            cell.classList.add('hole');
+        }
+    }
+    
+    updateStats();
+    hideSolution();
+    
+    // Проверяем lookup и показываем решение если есть
+    try {
+        const response = await fetch('/api/solve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                pegs: board.pegs, 
+                holes: board.holes || [],
+                solver: 'lookup'
+            })
+        });
+        
+        const data = await response.json();
+        if (data.success && data.moves) {
+            // showSolution уже покажет toast с информацией о решателе и времени
+            showSolution(data);
+        }
+    } catch (error) {
+        console.error('Error checking lookup:', error);
+    }
+    
+    showToast('Доска загружена', 'success', '');
+}
+
+function deleteRecentBoard(board) {
+    let boards = getRecentBoards();
+    boards = boards.filter(b => b.timestamp !== board.timestamp);
+    saveRecentBoards(boards);
+    loadRecentBoards();
+    showToast('Доска удалена из списка', 'info', '');
+}
+
+function clearRecentBoards() {
+    if (confirm('Удалить все сохранённые доски?')) {
+        saveRecentBoards([]);
+        loadRecentBoards();
+        showToast('Все доски удалены', 'info', '');
+    }
+}
+
+// Проверяем lookup для всех досок при загрузке
+async function checkBoardsForSolutions() {
+    const boards = getRecentBoards();
+    if (boards.length === 0) return;
+    
+    // Проверяем только первые 5 досок (чтобы не перегружать)
+    for (const board of boards.slice(0, 5)) {
+        if (board.hasSolution !== undefined) continue; // Уже проверено
+        
+        try {
+            const response = await fetch('/api/solve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    pegs: board.pegs, 
+                    holes: board.holes || [],
+                    solver: 'lookup'
+                })
+            });
+            
+            const data = await response.json();
+            board.hasSolution = data.success;
+        } catch (error) {
+            board.hasSolution = false;
+        }
+    }
+    
+    // Сохраняем обновлённые данные
+    saveRecentBoards(boards);
+    loadRecentBoards();
 }

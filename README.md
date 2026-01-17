@@ -18,6 +18,29 @@
 
 ## Быстрый старт
 
+### Установка
+
+**Рекомендуется**: Используйте единый скрипт установки:
+```bash
+./build_all.sh  # Установит всё автоматически
+```
+
+**Или вручную**:
+```bash
+# 1. Системные зависимости (Ubuntu/Debian)
+sudo apt-get update && sudo apt-get install -y python3-dev build-essential
+
+# 2. Python зависимости
+pip install -r requirements.txt
+
+# 3. Компиляция Cython (опционально)
+python setup.py build_ext --inplace
+```
+
+Подробнее: [INSTALLATION.md](INSTALLATION.md)
+
+### Использование
+
 ```bash
 # Тестовая позиция (быстро)
 python main.py --test
@@ -166,14 +189,56 @@ python -m web.app
 
 ## Требования
 
+### Python зависимости (устанавливаются через pip)
 - Python 3.8+
 - Flask (для Web UI)
 - Pillow (для загрузки скриншотов)
 - Cython (опционально, для компиляции расширений)
+- Numba (опционально, для JIT ускорения)
 
-Установка зависимостей:
+### Системные зависимости (для компиляции Cython)
+
+**Важно**: Для компиляции Cython расширений нужны системные пакеты разработки:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-dev build-essential
+```
+
+**Fedora/RHEL/CentOS:**
+```bash
+sudo dnf install -y python3-devel gcc gcc-c++ make
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S --noconfirm python base-devel
+```
+
+Подробнее: [INSTALL_DEPS.md](INSTALL_DEPS.md)
+
+### Установка
+
+**1. Установите системные зависимости** (если планируете компилировать Cython):
+```bash
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y python3-dev build-essential
+```
+
+**2. Установите Python зависимости:**
 ```bash
 pip install -r requirements.txt
+```
+
+**3. Скомпилируйте Cython (опционально, для ускорения ~26x):**
+```bash
+python setup.py build_ext --inplace
+```
+
+**Или используйте единый скрипт для всего:**
+```bash
+./build_all.sh  # Установит всё автоматически
 ```
 
 ## Статистика проекта

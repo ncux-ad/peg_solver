@@ -50,6 +50,15 @@
 
                 <!-- Панель управления справа -->
                 <div class="info-panel">
+                    <div class="modules-status" id="modules-status" style="background: var(--bg-tertiary); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+                        <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 600;">
+                            ⚡ Модули оптимизации:
+                        </div>
+                        <div id="modules-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Загрузка...</div>
+                        </div>
+                    </div>
+                    
                     <div class="stats">
                         <div class="stat">
                             <span class="stat-value" id="peg-count">0</span>
@@ -57,7 +66,11 @@
                         </div>
                         <div class="stat">
                             <span class="stat-value" id="moves-available">0</span>
-                            <span class="stat-label">Ходов</span>
+                            <span class="stat-label">Доступных ходов</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="moves-to-solution">0</span>
+                            <span class="stat-label">До решения</span>
                         </div>
                         <div class="stat" id="solvable-indicator">
                             <span class="stat-value">?</span>
@@ -77,6 +90,32 @@
                         </div>
                     </div>
 
+                    <div class="recent-boards-section" id="recent-boards-section" style="background: var(--bg-tertiary); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+                        <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.75rem; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+                            <span>📚 Недавние доски:</span>
+                            <button onclick="clearRecentBoards()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 4px; transition: all 0.2s;" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">Очистить</button>
+                        </div>
+                        <div id="recent-boards-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;">
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; padding: 1rem;">Нет сохранённых досок</div>
+                        </div>
+                    </div>
+
+                    <div class="board-notation-section">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: block;">
+                            ⚡ Быстрое заполнение доски:
+                        </label>
+                        <div class="notation-container">
+                            <textarea id="board-notation-input" class="board-notation" rows="3" placeholder="Введите координаты: C1 D1 F1 C2 E2 G2 A3 B3 C3 D3 E3 F3 G3 A4 C4 E4 G4 A5 B5 C5 D5 E5 F5 G5 A6 C6 E6 B7 C7 D7 E7 E1(hole)"></textarea>
+                            <button class="btn btn-primary" onclick="loadBoardFromNotation()" title="Применить координатное описание к доске">
+                                ✅ Применить
+                            </button>
+                        </div>
+                        <small style="color: var(--text-secondary); font-size: 0.75rem; display: block; margin-top: 0.25rem;">
+                            Формат: A1 B2 C3... для колышков, E1(hole) для пустых мест<br>
+                            💡 Нажмите Ctrl+Enter для быстрого применения
+                        </small>
+                    </div>
+
                     <div class="solver-options">
                         <label>Решатель:</label>
                         <select id="solver-select">
@@ -93,6 +132,8 @@
                             <option value="pattern_astar">🎨 Pattern A* (с базой паттернов)</option>
                             <option value="bidirectional">↔️ Bidirectional (двунаправленный)</option>
                             <option value="hybrid">🔄 Hybrid (авто)</option>
+                            <option value="exhaustive">🔍 Exhaustive (полный перебор с оценкой)</option>
+                            <option value="brute_force">💪 Brute Force (без ограничений, может быть очень долго)</option>
                         </select>
                         <div id="solver-description" class="solver-description">
                             <strong>📚 Lookup:</strong> Мгновенное решение для известных позиций из базы решений. Полный алгоритм с автоматическим fallback.
@@ -137,12 +178,22 @@
         </main>
 
         <footer>
-            <p>
-                Реализация: <strong>{{ implementation }}</strong>
-                {% if using_cython %}<span class="badge">⚡ Cython</span>{% endif %}
-            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <p style="margin: 0;">
+                        Реализация: <strong>{{ implementation }}</strong>
+                        {% if using_cython %}<span class="badge">⚡ Cython</span>{% endif %}
+                    </p>
+                </div>
+                <div id="modules-info" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <!-- Модули будут добавлены через JavaScript -->
+                </div>
+            </div>
         </footer>
     </div>
+
+    <!-- Toast уведомления -->
+    <div id="toast-container" class="toast-container"></div>
 
     <div class="loading-overlay" id="loading" style="display: none;">
         <div class="spinner"></div>
