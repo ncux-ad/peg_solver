@@ -151,6 +151,8 @@ def solve_stream():
     solver_type = data.get('solver', 'beam')
     unlimited = data.get('unlimited', False)
     
+    print(f"Solve Stream request: solver={solver_type}, unlimited={unlimited}, pegs={len(pegs_coords)}")
+    
     # Конвертируем в битовую маску
     pegs_bits = 0
     for row, col in pegs_coords:
@@ -188,6 +190,7 @@ def solve_stream():
     
     # Рассчитываем лимиты на основе производительности
     max_timeout, max_depth_unlimited, max_iterations_unlimited = calculate_solver_limits(unlimited)
+    print(f"Stream Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
     # Создаём queue для передачи событий прогресса
     progress_queue = queue.Queue()
@@ -269,6 +272,16 @@ def solve_stream():
                     solver_used = solver_type
             
                     if solution:
+                        # Сохраняем решение в базу для будущего использования
+                        # (только если это не LookupSolver - он сам сохраняет через fallback)
+                        if solver_type != 'lookup':
+                            try:
+                                lookup_solver = LookupSolver(use_fallback=False, verbose=False)
+                                lookup_solver.add_solution(board, solution)
+                                print(f"Solution saved to lookup DB: {len(solution)} moves")
+                            except Exception as e:
+                                print(f"Failed to save solution to DB: {e}")
+                        
                         # Форматируем решение
                         moves = []
                         for from_pos, jumped, to_pos in solution:
@@ -551,6 +564,8 @@ def solve():
     solver_type = data.get('solver', 'beam')
     unlimited = data.get('unlimited', False)  # Флаг "Без ограничений"
     
+    print(f"Solve request: solver={solver_type}, unlimited={unlimited}, pegs={len(pegs_coords)}")
+    
     # Конвертируем в битовую маску
     # Поддерживаем произвольные позиции на поле 7x7
     pegs_bits = 0
@@ -596,6 +611,7 @@ def solve():
     
     # Рассчитываем лимиты на основе производительности
     max_timeout, max_depth_unlimited, max_iterations_unlimited = calculate_solver_limits(unlimited)
+    print(f"Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
     solvers = {
         'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
@@ -674,6 +690,16 @@ def solve():
             'time': round(elapsed, 3),
             'solver': solver_type
         })
+    
+    # Сохраняем решение в базу для будущего использования
+    # (только если это не LookupSolver - он сам сохраняет через fallback)
+    if solver_type != 'lookup':
+        try:
+            lookup_solver = LookupSolver(use_fallback=False, verbose=False)
+            lookup_solver.add_solution(board, solution)
+            print(f"Solution saved to lookup DB: {len(solution)} moves")
+        except Exception as e:
+            print(f"Failed to save solution to DB: {e}")
     
     # Форматируем решение
     moves = []

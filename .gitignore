@@ -72,5 +72,5 @@ venv/
 *.so
 *.c
 build/
-known_solutions.pkl
+# known_solutions.pkl - теперь в Git для обмена решениями
 english_solution.json
