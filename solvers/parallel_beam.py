@@ -11,38 +11,45 @@ import multiprocessing
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from heuristics import pagoda_value, PAGODA_WEIGHTS
+from .optimized_utils import evaluate_position_optimized
 
 
 def _evaluate_board(state_data: Tuple[int, List]) -> Tuple[float, int, List]:
-    """Оценивает состояние доски (для multiprocessing)."""
-    from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
-    from heuristics import pagoda_value, PAGODA_WEIGHTS
+    """Оценивает состояние доски (для multiprocessing).
+    
+    Использует оптимизированные функции если доступны.
+    """
+    from core.bitboard import BitBoard
+    from heuristics.evaluation import evaluate_position
     
     pegs, path = state_data
     board = BitBoard(pegs)
     
-    score = board.peg_count() * 10
-    
-    # Расстояние до центра
-    for pos in ENGLISH_VALID_POSITIONS:
-        if board.has_peg(pos):
-            r, c = pos // 7, pos % 7
-            score += abs(r - 3) + abs(c - 3)
-    
-    # Мобильность
-    moves = board.get_moves()
-    score -= len(moves) * 2
-    
-    # Pagoda (мягкий)
-    min_pagoda = min(PAGODA_WEIGHTS.values())
-    current_pagoda = pagoda_value(board)
-    
-    if board.peg_count() > 15:
-        if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
-            score += 1000
-    else:
-        if current_pagoda < min_pagoda:
-            score += 1000
+    # Используем оптимизированную версию оценки
+    try:
+        score = evaluate_position(board)
+    except ImportError:
+        # Fallback на оригинальную версию
+        from core.bitboard import ENGLISH_VALID_POSITIONS, CENTER_POS
+        from heuristics import pagoda_value, PAGODA_WEIGHTS
+        
+        num_moves = len(board.get_moves())
+        score = board.peg_count() * 10.0
+        
+        center_row, center_col = 3, 3
+        for pos in ENGLISH_VALID_POSITIONS:
+            if board.has_peg(pos):
+                r, c = pos // 7, pos % 7
+                score += abs(r - center_row) + abs(c - center_col)
+        
+        score -= num_moves * 2.0
+        
+        current_pagoda = pagoda_value(board)
+        target_pagoda = PAGODA_WEIGHTS.get(CENTER_POS, 0)
+        
+        if board.peg_count() > 15:
+            if current_pagoda < target_pagoda:
+                score += 1000.0
     
     return (score, pegs, path)
 
@@ -145,33 +152,9 @@ class ParallelBeamSolver(BaseSolver):
         return candidates
     
     def _evaluate(self, board: BitBoard) -> float:
-        """Оценка позиции (меньше = лучше)."""
-        score = board.peg_count() * 10
-        
-        # Расстояние до центра
-        for pos in ENGLISH_VALID_POSITIONS:
-            if board.has_peg(pos):
-                r, c = pos // 7, pos % 7
-                score += abs(r - 3) + abs(c - 3)
-        
-        # Мобильность
-        score -= len(board.get_moves()) * 2
-        
-        # Изолированные колышки
-        score += self._count_isolated(board) * 15
-        
-        # Pagoda (мягкий)
-        min_pagoda = min(PAGODA_WEIGHTS.values())
-        current_pagoda = pagoda_value(board)
-        
-        if board.peg_count() > 15:
-            if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
-                score += 1000
-        else:
-            if current_pagoda < min_pagoda:
-                score += 1000
-        
-        return score
+        """Оценка позиции (меньше = лучше). Использует оптимизированную версию."""
+        num_moves = len(board.get_moves())
+        return evaluate_position_optimized(board, num_moves)
     
     def _count_isolated(self, board: BitBoard) -> int:
         """Количество изолированных колышков."""

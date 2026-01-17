@@ -16,7 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
-from solvers import DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver, ParallelBeamSolver, ParallelSolver
+from solvers import (
+    DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver,
+    ParallelBeamSolver, ParallelSolver, AStarSolver, IDAStarSolver,
+    PatternAStarSolver, ZobristDFSSolver, BidirectionalSolver, SequentialSolver
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 # Минимальный Pagoda вес для любой валидной позиции (для произвольных начальных состояний)
@@ -64,6 +68,7 @@ def solve():
     pegs_coords = data.get('pegs', [])
     holes_coords = data.get('holes', [])
     solver_type = data.get('solver', 'beam')
+    unlimited = data.get('unlimited', False)  # Флаг "Без ограничений"
     
     # Конвертируем в битовую маску
     # Поддерживаем произвольные позиции на поле 7x7
@@ -98,15 +103,48 @@ def solve():
             'peg_count': peg_count
         })
     
-    # Выбор решателя
+    # Выбор решателя с учётом флага "Без ограничений"
+    # Если unlimited=True, устанавливаем очень большие значения timeout/max_depth
+    # Практически эквивалентно "без ограничений" (1 час = 3600 сек, глубина 1000 ходов)
+    max_timeout = 3600.0 if unlimited else 120.0  # 1 час при unlimited, иначе 120 сек
+    max_depth_unlimited = 1000 if unlimited else 35  # 1000 ходов при unlimited, иначе 35
+    
     solvers = {
         'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
-        'parallel_beam': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, verbose=False),  # Параллельный Beam
+        'sequential': lambda: SequentialSolver(
+            timeout=max_timeout,
+            max_depth_unlimited=max_depth_unlimited,
+            verbose=False
+        ),  # Систематический перебор от простых к сложным
+        'governor': lambda: GovernorSolver(
+            timeout=max_timeout, 
+            verbose=False
+        ),  # Timeout с учётом флага unlimited
+        'parallel_beam': lambda: ParallelBeamSolver(
+            beam_width=500, 
+            num_workers=4, 
+            max_depth=max_depth_unlimited,
+            verbose=False
+        ),  # Параллельный Beam
         'parallel': lambda: ParallelSolver(num_workers=4, verbose=False),  # Параллельный DFS
+        'beam': lambda: BeamSolver(
+            beam_width=500, 
+            max_depth=max_depth_unlimited,
+            verbose=False
+        ),  # Увеличен beam_width
         'dfs': lambda: DFSSolver(verbose=False, use_pagoda=False),  # Отключаем Pagoda для надёжности
-        'beam': lambda: BeamSolver(beam_width=500, max_depth=35, verbose=False),  # Увеличен beam_width
-        'hybrid': lambda: HybridSolver(timeout=120, verbose=False),  # Увеличен timeout
-        'governor': lambda: GovernorSolver(timeout=60, verbose=False),  # Увеличен timeout
+        'zobrist_dfs': lambda: ZobristDFSSolver(verbose=False, use_pagoda=False),  # DFS с Zobrist Hashing
+        'astar': lambda: AStarSolver(verbose=False),  # A* с эвристиками
+        'ida': lambda: IDAStarSolver(
+            max_depth=max_depth_unlimited,
+            verbose=False
+        ),  # IDA* (экономия памяти)
+        'pattern_astar': lambda: PatternAStarSolver(verbose=False),  # A* с Pattern Database
+        'bidirectional': lambda: BidirectionalSolver(verbose=False),  # Двунаправленный поиск
+        'hybrid': lambda: HybridSolver(
+            timeout=max_timeout, 
+            verbose=False
+        ),  # Timeout с учётом флага unlimited
     }
     
     # По умолчанию используем LookupSolver (быстрее для известных позиций)

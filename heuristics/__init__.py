@@ -29,6 +29,7 @@ from .pattern_db import (
     combined_pattern_heuristic,
     get_pattern_db
 )
+from .evaluation import evaluate_position
 
 __all__ = [
     'heuristic_peg_count',
@@ -44,5 +45,6 @@ __all__ = [
     'PatternDatabase',
     'pattern_heuristic',
     'combined_pattern_heuristic',
-    'get_pattern_db'
+    'get_pattern_db',
+    'evaluate_position'
 ]

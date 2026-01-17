@@ -65,17 +65,45 @@
                         </div>
                     </div>
 
+                    <div class="board-notation-section">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: block;">
+                            📋 Координатное описание доски:
+                        </label>
+                        <div class="notation-container">
+                            <textarea id="board-notation" class="board-notation" readonly rows="3"></textarea>
+                            <button class="btn btn-secondary btn-copy" onclick="copyBoardNotation()" title="Копировать в буфер обмена">
+                                📋 Копировать
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="solver-options">
                         <label>Решатель:</label>
                         <select id="solver-select">
                             <option value="lookup" selected>📚 Lookup (база решений)</option>
+                            <option value="sequential">🔄 Sequential (перебор от простых к сложным)</option>
                             <option value="governor">🎯 Governor (умный выбор)</option>
                             <option value="parallel_beam">⚡ Parallel Beam (многопоточный)</option>
                             <option value="parallel">⚡ Parallel DFS (многопоточный)</option>
                             <option value="beam">Beam Search (быстрый)</option>
                             <option value="dfs">DFS (полный)</option>
-                            <option value="hybrid">Hybrid (авто)</option>
+                            <option value="zobrist_dfs">🔐 Zobrist DFS (глубокий поиск)</option>
+                            <option value="astar">⭐ A* (эвристический)</option>
+                            <option value="ida">📊 IDA* (экономия памяти)</option>
+                            <option value="pattern_astar">🎨 Pattern A* (с базой паттернов)</option>
+                            <option value="bidirectional">↔️ Bidirectional (двунаправленный)</option>
+                            <option value="hybrid">🔄 Hybrid (авто)</option>
                         </select>
+                        <div id="solver-description" class="solver-description">
+                            <strong>📚 Lookup:</strong> Мгновенное решение для известных позиций из базы решений. Полный алгоритм с автоматическим fallback.
+                        </div>
+                        <label class="checkbox-label" style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="unlimited-checkbox" style="cursor: pointer;">
+                            <span>♾️ Без ограничений</span>
+                        </label>
+                        <small style="display: block; margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.75rem;">
+                            Убрать ограничения по времени и глубине поиска
+                        </small>
                     </div>
 
                     <button class="btn btn-solve" id="solve-btn" onclick="solve()">

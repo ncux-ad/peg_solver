@@ -160,6 +160,8 @@ python -m web.app
 
 - **[PROJECT_BRIEF.md](PROJECT_BRIEF.md)** - Полный бриф проекта
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Руководство по производительности
+- **[OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md)** - 🚀 **Руководство по оптимизации (Rust, Numba JIT)**
+- **[OPTIMIZATION_SUMMARY_RU.md](OPTIMIZATION_SUMMARY_RU.md)** - 📊 **Сводка по оптимизации**
 - **[MULTITHREADING_SUMMARY.md](MULTITHREADING_SUMMARY.md)** - Сводка по мультипоточности
 
 ## Требования
@@ -181,7 +183,7 @@ pip install -r requirements.txt
 - **Оптимизаций**: 7 методов ускорения
 - **Строк кода**: ~4600+
 - **Модулей**: 38 файлов
-- **Языки**: Python, Cython, JavaScript, HTML/CSS
+- **Языки**: Python, Cython, Rust, Numba JIT, JavaScript, HTML/CSS
 
 ## Лицензия
 

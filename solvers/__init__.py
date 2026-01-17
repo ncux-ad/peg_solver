@@ -22,6 +22,7 @@ from .hybrid import HybridSolver
 from .pattern_astar import PatternAStarSolver
 from .governor import GovernorSolver
 from .lookup import LookupSolver
+from .sequential import SequentialSolver
 
 __all__ = [
     'DFSSolver',
@@ -36,4 +37,5 @@ __all__ = [
     'PatternAStarSolver',
     'GovernorSolver',
     'LookupSolver',
+    'SequentialSolver',
 ]
