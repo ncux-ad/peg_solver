@@ -9,7 +9,10 @@ import sys
 import base64
 import io
 import time
-from flask import Flask, render_template, request, jsonify
+import json
+import threading
+import queue
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 
 # Добавляем корень проекта в path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,6 +52,363 @@ def index():
     return render_template('index.html', 
                           implementation=get_implementation_info(),
                           using_cython=USING_CYTHON)
+
+
+@app.route('/api/solve-stream', methods=['POST'])
+def solve_stream():
+    """
+    API для решения головоломки с потоковой передачей прогресса (SSE).
+    Отправляет события о текущем методе и времени выполнения.
+    """
+    data = request.json
+    
+    pegs_coords = data.get('pegs', [])
+    holes_coords = data.get('holes', [])
+    solver_type = data.get('solver', 'beam')
+    unlimited = data.get('unlimited', False)
+    
+    # Конвертируем в битовую маску
+    pegs_bits = 0
+    for row, col in pegs_coords:
+        if 0 <= row < 7 and 0 <= col < 7:
+            pos = coords_to_bit(row, col)
+            if 0 <= pos < 49:
+                pegs_bits |= (1 << pos)
+    
+    if pegs_bits == 0:
+        return jsonify({
+            'success': False,
+            'error': 'Нет колышков на доске'
+        })
+    
+    # Используем быстрый popcount
+    import sys
+    if sys.version_info >= (3, 10):
+        peg_count = pegs_bits.bit_count()
+    else:
+        x = pegs_bits
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
+        peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
+    
+    board = BitBoard(pegs_bits)
+    pagoda_val = pagoda_value(board)
+    
+    if pagoda_val < MIN_PAGODA_ANY_POS:
+        return jsonify({
+            'success': False,
+            'error': 'Позиция недостижима (Pagoda pruning)',
+            'peg_count': peg_count
+        })
+    
+    max_timeout = 3600.0 if unlimited else 120.0
+    max_depth_unlimited = 1000 if unlimited else 35
+    
+    # Создаём queue для передачи событий прогресса
+    progress_queue = queue.Queue()
+    
+    def generate():
+        """Генератор для SSE событий."""
+        solution = None
+        solver_used = solver_type
+        
+        try:
+            # Создаём callback для отправки прогресса через queue
+            def progress_callback(method_name, status, elapsed_time=None, total=None, current=None):
+                """Callback для отправки прогресса через queue."""
+                event_data = {
+                    'type': 'progress',
+                    'method': method_name,
+                    'status': status,  # 'starting', 'running', 'completed', 'failed'
+                    'elapsed': round(elapsed_time, 2) if elapsed_time else None,
+                    'total': total,
+                    'current': current
+                }
+                progress_queue.put(event_data)
+            
+            # Запускаем решение в отдельном потоке
+            def solve_in_thread():
+                nonlocal solution
+                try:
+                    # Модифицируем решатели для поддержки callback
+                    if solver_type in ['governor', 'sequential', 'hybrid']:
+                        if solver_type == 'governor':
+                            solver = GovernorSolverWithProgress(
+                                timeout=max_timeout, 
+                                verbose=False,
+                                progress_callback=progress_callback
+                            )
+                        elif solver_type == 'sequential':
+                            solver = SequentialSolverWithProgress(
+                                timeout=max_timeout,
+                                max_depth_unlimited=max_depth_unlimited,
+                                verbose=False,
+                                progress_callback=progress_callback
+                            )
+                        else:  # hybrid
+                            solver = HybridSolverWithProgress(
+                                timeout=max_timeout,
+                                verbose=False,
+                                progress_callback=progress_callback
+                            )
+                    else:
+                        # Для других решателей просто отправляем одно событие
+                        solvers = {
+                            'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),
+                            'beam': lambda: BeamSolver(beam_width=500, max_depth=max_depth_unlimited, verbose=False),
+                            'dfs': lambda: DFSSolver(verbose=False, use_pagoda=False),
+                            'astar': lambda: AStarSolver(verbose=False),
+                            'ida': lambda: IDAStarSolver(max_depth=max_depth_unlimited, verbose=False),
+                            'pattern_astar': lambda: PatternAStarSolver(verbose=False),
+                            'bidirectional': lambda: BidirectionalSolver(verbose=False),
+                            'parallel': lambda: ParallelSolver(num_workers=4, verbose=False),
+                            'parallel_beam': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, max_depth=max_depth_unlimited, verbose=False),
+                        }
+                        
+                        solver = solvers.get(solver_type, solvers['beam'])()
+                        progress_callback(solver_type, 'starting', 0)
+                    
+                    start_time = time.time()
+                    progress_callback(solver_type, 'running', 0)
+                    
+                    solution = solver.solve(board)
+                    
+                    elapsed = time.time() - start_time
+            
+                    if solution:
+                        # Форматируем решение
+                        moves = []
+                        for from_pos, jumped, to_pos in solution:
+                            fr, fc = bit_to_coords(from_pos)
+                            tr, tc = bit_to_coords(to_pos)
+                            jr, jc = bit_to_coords(jumped)
+                            moves.append({
+                                'from': {'row': fr, 'col': fc, 'pos': from_pos},
+                                'jumped': {'row': jr, 'col': jc, 'pos': jumped},
+                                'to': {'row': tr, 'col': tc, 'pos': to_pos},
+                                'notation': f"{chr(fc + ord('A'))}{fr + 1} → {chr(tc + ord('A'))}{tr + 1}"
+                            })
+                        
+                        # Отправляем финальный результат
+                        result_data = {
+                            'type': 'result',
+                            'success': True,
+                            'moves': moves,
+                            'move_count': len(moves),
+                            'peg_count': peg_count,
+                            'time': round(elapsed, 3),
+                            'solver': solver_used
+                        }
+                        progress_queue.put(result_data)
+                    else:
+                        result_data = {
+                            'type': 'result',
+                            'success': False,
+                            'error': 'Решение не найдено',
+                            'peg_count': peg_count,
+                            'time': round(elapsed, 3)
+                        }
+                        progress_queue.put(result_data)
+                except Exception as e:
+                    import traceback
+                    error_data = {
+                        'type': 'result',
+                        'success': False,
+                        'error': f'Ошибка решателя: {str(e)}',
+                        'traceback': traceback.format_exc()
+                    }
+                    progress_queue.put(error_data)
+            
+            # Запускаем решение в отдельном потоке
+            thread = threading.Thread(target=solve_in_thread, daemon=True)
+            thread.start()
+            
+            # Читаем события из queue и отправляем через SSE
+            while True:
+                try:
+                    # Ждём событие с таймаутом
+                    event_data = progress_queue.get(timeout=0.1)
+                    
+                    # Отправляем событие
+                    yield f"data: {json.dumps(event_data)}\n\n"
+                    
+                    # Если это финальный результат, завершаем
+                    if event_data.get('type') == 'result':
+                        break
+                        
+                except queue.Empty:
+                    # Проверяем, завершился ли поток
+                    if not thread.is_alive():
+                        # Пробуем получить последнее событие
+                        try:
+                            event_data = progress_queue.get_nowait()
+                            yield f"data: {json.dumps(event_data)}\n\n"
+                        except queue.Empty:
+                            pass
+                        break
+                    continue
+                
+        except Exception as e:
+            import traceback
+            error_data = {
+                'type': 'result',
+                'success': False,
+                'error': f'Ошибка: {str(e)}',
+                'traceback': traceback.format_exc()
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+    
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+
+# Классы-обёртки для решателей с поддержкой прогресса
+class GovernorSolverWithProgress(GovernorSolver):
+    """GovernorSolver с поддержкой callback прогресса."""
+    def __init__(self, timeout=120.0, verbose=False, progress_callback=None):
+        super().__init__(timeout=timeout, verbose=verbose)
+        self.progress_callback = progress_callback or (lambda *args, **kwargs: None)
+    
+    def solve(self, board):
+        """Переопределяем solve для отправки прогресса."""
+        import time
+        start_time = time.time()
+        
+        # Отправляем прогресс для Lookup
+        self.progress_callback('Lookup', 'starting', 0)
+        lookup_start = time.time()
+        lookup_solver = LookupSolver(use_fallback=False, verbose=False)
+        solution = lookup_solver.solve(board)
+        lookup_elapsed = time.time() - lookup_start
+        self.progress_callback('Lookup', 'completed' if solution else 'failed', lookup_elapsed)
+        
+        if solution:
+            return solution
+        
+        # Анализ и выбор решателя
+        analysis = self._analyze_position(board)
+        chosen_solver = self._choose_solver(analysis)
+        solver_name = chosen_solver['name']
+        
+        # Отправляем прогресс для выбранного решателя
+        self.progress_callback(solver_name, 'starting', time.time() - start_time)
+        solver_start = time.time()
+        solver_instance = chosen_solver['solver']()
+        solution = self._solve_with_timeout(solver_instance, board, min(self.timeout * 0.7, 30.0), start_time)
+        solver_elapsed = time.time() - solver_start
+        self.progress_callback(solver_name, 'completed' if solution else 'failed', solver_elapsed)
+        
+        if solution:
+            return solution
+        
+        # Fallback решатели
+        return self._try_fallbacks_with_progress(board, analysis, solver_name, start_time)
+    
+    def _try_fallbacks_with_progress(self, board, analysis, failed_solver, start_time):
+        """Пробует fallback решатели с отправкой прогресса."""
+        fallbacks = []
+        
+        if failed_solver != 'DFS' and analysis['peg_count'] < 15:
+            fallbacks.append(('DFS', lambda: DFSSolver(verbose=False)))
+        
+        if failed_solver not in ['Beam Search', 'Beam Search (wide)']:
+            fallbacks.append(('Beam Search', lambda: BeamSolver(beam_width=300, verbose=False)))
+        
+        if failed_solver != 'IDA*':
+            fallbacks.append(('IDA*', lambda: IDAStarSolver(verbose=False)))
+        
+        for name, solver_fn in fallbacks:
+            elapsed = time.time() - start_time
+            if elapsed > self.timeout:
+                return None
+            
+            self.progress_callback(name, 'starting', elapsed)
+            solver_start = time.time()
+            
+            try:
+                solver_instance = solver_fn()
+                solution = self._solve_with_timeout(
+                    solver_instance, board,
+                    min(self.timeout - elapsed, 20.0),
+                    start_time
+                )
+                solver_elapsed = time.time() - solver_start
+                self.progress_callback(name, 'completed' if solution else 'failed', solver_elapsed)
+                
+                if solution:
+                    return solution
+            except Exception as e:
+                solver_elapsed = time.time() - solver_start
+                self.progress_callback(name, 'failed', solver_elapsed)
+        
+        return None
+
+
+class SequentialSolverWithProgress(SequentialSolver):
+    """SequentialSolver с поддержкой callback прогресса."""
+    def __init__(self, timeout=300.0, verbose=False, max_depth_unlimited=None, progress_callback=None):
+        super().__init__(timeout=timeout, verbose=verbose, max_depth_unlimited=max_depth_unlimited)
+        self.progress_callback = progress_callback or (lambda *args, **kwargs: None)
+    
+    def solve(self, board):
+        """Переопределяем solve для отправки прогресса."""
+        import time
+        start_time = time.time()
+        
+        strategies = [
+            ("Lookup", lambda: LookupSolver(use_fallback=False, verbose=False).solve(board)),
+            ("DFS", lambda: DFSSolver(verbose=False, use_pagoda=False).solve(board)),
+            ("Beam Search (500)", lambda: BeamSolver(beam_width=500, max_depth=self.max_depth_unlimited, verbose=False).solve(board)),
+            ("Zobrist DFS", lambda: ZobristDFSSolver(verbose=False, use_pagoda=False).solve(board)),
+            ("A*", lambda: AStarSolver(verbose=False).solve(board)),
+            ("Pattern A*", lambda: PatternAStarSolver(verbose=False).solve(board)),
+            ("IDA*", lambda: IDAStarSolver(max_depth=self.max_depth_unlimited, verbose=False).solve(board)),
+            ("Bidirectional", lambda: BidirectionalSolver(verbose=False).solve(board)),
+            ("Parallel DFS", lambda: ParallelSolver(num_workers=4, verbose=False).solve(board)),
+            ("Parallel Beam", lambda: ParallelBeamSolver(beam_width=500, max_depth=self.max_depth_unlimited, num_workers=4, verbose=False).solve(board)),
+        ]
+        
+        for idx, (name, solver_fn) in enumerate(strategies, 1):
+            elapsed = time.time() - start_time
+            if elapsed > self.timeout:
+                return None
+            
+            self.progress_callback(name, 'starting', elapsed, len(strategies), idx)
+            solver_start = time.time()
+            
+            try:
+                result = solver_fn()
+                solver_elapsed = time.time() - solver_start
+                
+                if result is not None and self._validate_solution(board, result):
+                    self.progress_callback(name, 'completed', solver_elapsed, len(strategies), idx)
+                    return result
+                else:
+                    self.progress_callback(name, 'failed', solver_elapsed, len(strategies), idx)
+            except Exception as e:
+                solver_elapsed = time.time() - solver_start
+                self.progress_callback(name, 'failed', solver_elapsed, len(strategies), idx)
+        
+        return None
+
+
+class HybridSolverWithProgress(HybridSolver):
+    """HybridSolver с поддержкой callback прогресса."""
+    def __init__(self, timeout=120.0, verbose=False, progress_callback=None):
+        super().__init__(timeout=timeout, verbose=verbose)
+        self.progress_callback = progress_callback or (lambda *args, **kwargs: None)
+    
+    def solve(self, board):
+        # Для Hybrid используем аналогичную логику как Governor
+        # HybridSolver обычно пробует несколько решателей, но у него нет детального прогресса
+        # Используем базовую реализацию
+        import time
+        start_time = time.time()
+        self.progress_callback('Hybrid', 'starting', 0)
+        solution = super().solve(board)
+        elapsed = time.time() - start_time
+        self.progress_callback('Hybrid', 'completed' if solution else 'failed', elapsed)
+        return solution
 
 
 @app.route('/api/solve', methods=['POST'])

@@ -584,7 +584,57 @@ footer {
     to { transform: rotate(360deg); }
 }
 
-.loading-overlay p {
+.loading-overlay p,
+.loading-overlay #loading-text {
     margin-top: 1rem;
     color: var(--text-secondary);
+}
+
+/* Стили для прогресса решения */
+.progress-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    font-size: 0.875rem;
+}
+
+.progress-check {
+    font-size: 1.2rem;
+    min-width: 1.5rem;
+    text-align: center;
+}
+
+.progress-check.running {
+    animation: pulse 1.5s infinite;
+}
+
+.progress-check.completed {
+    color: var(--success);
+}
+
+.progress-check.failed {
+    color: var(--danger);
+}
+
+.progress-name {
+    flex: 1;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.progress-time {
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    min-width: 60px;
+    text-align: right;
+}
+
+.progress-counter {
+    color: var(--accent);
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
 }

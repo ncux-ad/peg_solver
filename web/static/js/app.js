@@ -428,28 +428,164 @@ async function solve() {
     const solver = document.getElementById('solver-select').value;
     const unlimited = document.getElementById('unlimited-checkbox').checked;
     const loading = document.getElementById('loading');
+    const progressContainer = document.getElementById('progress-container');
+    const progressList = document.getElementById('progress-list');
+    const currentMethod = document.getElementById('current-method');
+    
+    // Показываем контейнер прогресса для решателей с перебором
+    const showProgress = ['governor', 'sequential', 'hybrid'].includes(solver);
+    if (showProgress) {
+        progressContainer.style.display = 'block';
+        progressList.innerHTML = '';
+        currentMethod.textContent = 'Инициализация...';
+    }
     
     loading.style.display = 'flex';
     
-    try {
-        const response = await fetch('/api/solve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pegs, solver, unlimited })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showSolution(data);
-        } else {
-            alert(`Ошибка: ${data.error}`);
+    // Используем SSE для решателей с перебором
+    if (showProgress) {
+        try {
+            const response = await fetch('/api/solve-stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pegs, solver, unlimited })
+            });
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            const methods = new Map(); // Храним состояние методов
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Оставляем неполную строку в буфере
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            
+                            if (data.type === 'progress') {
+                                updateProgress(data, methods, progressList, currentMethod);
+                            } else if (data.type === 'result') {
+                                if (data.success) {
+                                    showSolution(data);
+                                } else {
+                                    alert(`Ошибка: ${data.error}`);
+                                }
+                                loading.style.display = 'none';
+                                if (showProgress) {
+                                    progressContainer.style.display = 'none';
+                                }
+                                return;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE data:', e);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error solving:', error);
+            alert('Ошибка при решении');
+            loading.style.display = 'none';
+            if (showProgress) {
+                progressContainer.style.display = 'none';
+            }
         }
-    } catch (error) {
-        console.error('Error solving:', error);
-        alert('Ошибка при решении');
-    } finally {
-        loading.style.display = 'none';
+    } else {
+        // Для обычных решателей используем старый API
+        try {
+            const response = await fetch('/api/solve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pegs, solver, unlimited })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showSolution(data);
+            } else {
+                alert(`Ошибка: ${data.error}`);
+            }
+        } catch (error) {
+            console.error('Error solving:', error);
+            alert('Ошибка при решении');
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+}
+
+function updateProgress(data, methods, progressList, currentMethod) {
+    const methodName = data.method;
+    const status = data.status;
+    const elapsed = data.elapsed;
+    const total = data.total;
+    const current = data.current;
+    
+    // Обновляем или создаём элемент метода
+    if (!methods.has(methodName)) {
+        const item = document.createElement('div');
+        item.className = 'progress-item';
+        item.id = `progress-${methodName.replace(/\s+/g, '-')}`;
+        item.innerHTML = `
+            <span class="progress-check">⏳</span>
+            <span class="progress-name">${methodName}</span>
+            <span class="progress-time">-</span>
+        `;
+        progressList.appendChild(item);
+        methods.set(methodName, item);
+    }
+    
+    const item = methods.get(methodName);
+    const checkSpan = item.querySelector('.progress-check');
+    const timeSpan = item.querySelector('.progress-time');
+    
+    // Обновляем статус
+    if (status === 'starting') {
+        checkSpan.textContent = '⏳';
+        checkSpan.className = 'progress-check running';
+        timeSpan.textContent = 'Запуск...';
+        currentMethod.textContent = `${methodName} - запуск...`;
+    } else if (status === 'running') {
+        checkSpan.textContent = '⏳';
+        checkSpan.className = 'progress-check running';
+        if (elapsed !== null) {
+            timeSpan.textContent = `${elapsed}с`;
+            currentMethod.textContent = `${methodName} - ${elapsed}с`;
+        }
+    } else if (status === 'completed') {
+        checkSpan.textContent = '✅';
+        checkSpan.className = 'progress-check completed';
+        if (elapsed !== null) {
+            timeSpan.textContent = `${elapsed}с`;
+        }
+        currentMethod.textContent = `${methodName} - завершён (${elapsed}с)`;
+    } else if (status === 'failed') {
+        checkSpan.textContent = '❌';
+        checkSpan.className = 'progress-check failed';
+        if (elapsed !== null) {
+            timeSpan.textContent = `${elapsed}с`;
+        }
+        currentMethod.textContent = `${methodName} - не найдено (${elapsed}с)`;
+    }
+    
+    // Показываем прогресс если есть
+    if (total && current) {
+        const progressText = `[${current}/${total}]`;
+        if (!item.querySelector('.progress-counter')) {
+            const counter = document.createElement('span');
+            counter.className = 'progress-counter';
+            item.appendChild(counter);
+        }
+        item.querySelector('.progress-counter').textContent = progressText;
     }
 }
 

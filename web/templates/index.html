@@ -146,7 +146,19 @@
 
     <div class="loading-overlay" id="loading" style="display: none;">
         <div class="spinner"></div>
-        <p>Поиск решения...</p>
+        <p id="loading-text">Поиск решения...</p>
+        <div id="progress-container" style="display: none; margin-top: 1.5rem; max-width: 500px;">
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+                <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Текущий метод:</div>
+                <div id="current-method" style="font-weight: 600; color: var(--accent);">Инициализация...</div>
+            </div>
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 1rem;">
+                <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.75rem;">Список методов:</div>
+                <div id="progress-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <!-- Список методов будет добавлен динамически -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
