@@ -197,7 +197,7 @@ function toggleCell(row, col) {
         cell.classList.add('peg');
     }
     
-    updateStats();
+    updateStats(); // Это также обновит текстовое представление
     hideSolution();
 }
 
@@ -216,7 +216,7 @@ function clearBoard() {
             cell.classList.add('empty');
         }
     }
-    updateStats();
+    updateStats(); // Обновит также текстовое представление
     hideSolution();
 }
 
@@ -264,7 +264,7 @@ async function loadPreset(name) {
             }
         }
         
-        updateStats();
+        updateStats(); // Обновит также текстовое представление
         hideSolution();
     } catch (error) {
         console.error('Error loading preset:', error);
@@ -285,9 +285,113 @@ function getPegs() {
     return pegs;
 }
 
+function getBoardNotation() {
+    /**
+     * Генерирует текстовое представление доски в формате координат.
+     * Формат: A1, B2, C3... где A-G это колонки (0-6), 1-7 это строки (0-6)
+     * Пустые места помечаются как (hole)
+     */
+    const pegs = getPegs();
+    const holes = [];
+    
+    // Собираем пустые места (holes)
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            if (boardState[key] === 'hole') {
+                holes.push([row, col]);
+            }
+        }
+    }
+    
+    // Преобразуем координаты в буквенно-цифровой формат
+    function coordToString(row, col, isHole = false) {
+        const letter = String.fromCharCode(65 + col); // A-G (0-6 -> A-G)
+        const number = row + 1; // 1-7 (0-6 -> 1-7)
+        const coord = `${letter}${number}`;
+        return isHole ? `${coord}(hole)` : coord;
+    }
+    
+    // Формируем координатное описание - все в одном списке, пустые места с пометкой (hole)
+    const allCoords = [];
+    
+    // Добавляем колышки
+    for (const [row, col] of pegs) {
+        allCoords.push(coordToString(row, col, false));
+    }
+    
+    // Добавляем пустые места с пометкой (hole)
+    for (const [row, col] of holes) {
+        allCoords.push(coordToString(row, col, true));
+    }
+    
+    return allCoords.length > 0 ? allCoords.join(' ') : '(доска пуста)';
+}
+
+function updateBoardNotation() {
+    const notationTextarea = document.getElementById('board-notation');
+    if (notationTextarea) {
+        notationTextarea.value = getBoardNotation();
+    }
+}
+
+function copyBoardNotation() {
+    const notationTextarea = document.getElementById('board-notation');
+    if (!notationTextarea) return;
+    
+    notationTextarea.select();
+    notationTextarea.setSelectionRange(0, 99999); // Для мобильных устройств
+    
+    const btn = document.querySelector('.btn-copy');
+    const originalText = btn ? btn.textContent : '📋 Копировать';
+    
+    // Пробуем использовать Clipboard API (современный способ)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(notationTextarea.value).then(() => {
+            if (btn) {
+                btn.textContent = '✅ Скопировано!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            }
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            // Fallback на execCommand
+            fallbackCopy();
+        });
+    } else {
+        // Fallback на execCommand для старых браузеров
+        fallbackCopy();
+    }
+    
+    function fallbackCopy() {
+        try {
+            const successful = document.execCommand('copy');
+            if (successful && btn) {
+                btn.textContent = '✅ Скопировано!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            } else {
+                alert('Используйте Ctrl+C для копирования');
+            }
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            alert('Используйте Ctrl+C для копирования');
+        }
+    }
+}
+
 async function updateStats() {
     const pegs = getPegs();
     document.getElementById('peg-count').textContent = pegs.length;
+    
+    // Обновляем текстовое представление доски
+    updateBoardNotation();
     
     try {
         const response = await fetch('/api/validate', {

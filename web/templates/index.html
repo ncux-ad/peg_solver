@@ -65,6 +65,18 @@
                         </div>
                     </div>
 
+                    <div class="board-notation-section">
+                        <label style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: block;">
+                            📋 Координатное описание доски:
+                        </label>
+                        <div class="notation-container">
+                            <textarea id="board-notation" class="board-notation" readonly rows="3"></textarea>
+                            <button class="btn btn-secondary btn-copy" onclick="copyBoardNotation()" title="Копировать в буфер обмена">
+                                📋 Копировать
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="solver-options">
                         <label>Решатель:</label>
                         <select id="solver-select">
