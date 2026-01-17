@@ -35,6 +35,7 @@ class BruteForceSolver(BaseSolver):
         self.max_depth = max_depth
         self.start_time = None
         self.memo: Dict[int, Optional[List]] = {}  # Кэш результатов
+        self.last_progress_log = 0.0  # Время последнего логирования прогресса
     
     def solve(self, board: BitBoard) -> Optional[List[Tuple[int, int, int]]]:
         """Запускает brute force search."""
@@ -55,20 +56,31 @@ class BruteForceSolver(BaseSolver):
             self.stats.solution_length = len(result)
             self._log(f"✓ Solution found! ({len(result)} moves, {elapsed:.2f}s, {self.stats.nodes_visited} nodes)")
         else:
-            self._log(f"✗ No solution found ({elapsed:.2f}s из {self.timeout}s, {self.stats.nodes_visited} nodes, {self.stats.nodes_pruned} pruned)")
+            self._log(f"✗ No solution found ({elapsed:.2f}s из {self.timeout}s, {self.stats.nodes_visited} nodes, {self.stats.nodes_pruned} pruned, max_depth={self.stats.max_depth})")
             if elapsed < self.timeout:
                 self._log(f"⚠️  Brute Force прервался раньше timeout! Работал {elapsed:.2f}s из {self.timeout}s")
+                self._log(f"   Возможные причины: достигнут max_depth={self.max_depth} или исчерпаны все пути")
         
         return result
     
     def _brute_force_search(self, board: BitBoard, path: List[Tuple[int, int, int]]) -> Optional[List]:
         """Рекурсивный brute force search БЕЗ Pagoda pruning."""
         # Проверка timeout
-        if time.time() - self.start_time > self.timeout:
+        elapsed = time.time() - self.start_time
+        if elapsed > self.timeout:
+            if len(path) == 0:  # Логируем только на верхнем уровне, чтобы не спамить
+                self._log(f"⏱️  Timeout reached: {elapsed:.2f}s >= {self.timeout}s")
             return None
+        
+        # Периодическое логирование прогресса (каждые 30 секунд)
+        if len(path) == 0 and elapsed - self.last_progress_log >= 30.0:
+            self.last_progress_log = elapsed
+            self._log(f"⏳ Progress: {elapsed:.1f}s / {self.timeout:.1f}s, nodes={self.stats.nodes_visited}, depth={self.stats.max_depth}, memo={len(self.memo)}")
         
         # Проверка глубины
         if len(path) >= self.max_depth:
+            if len(path) == self.max_depth - 1:  # Логируем только когда достигли лимита
+                self._log(f"📏 Max depth reached: {len(path)} >= {self.max_depth}")
             return None
         
         self.stats.nodes_visited += 1
@@ -135,6 +147,13 @@ class BruteForceSolver(BaseSolver):
         
         # Все пути не привели к решению
         self.memo[key] = None
+        
+        # Логируем только на верхнем уровне, если исчерпаны все пути
+        if len(path) == 0:
+            elapsed = time.time() - self.start_time
+            if elapsed < self.timeout:
+                self._log(f"🔍 All paths exhausted: visited {self.stats.nodes_visited} nodes, max_depth={self.stats.max_depth}, memo_size={len(self.memo)}")
+        
         return None
     
     def _get_key(self, board: BitBoard) -> int:
