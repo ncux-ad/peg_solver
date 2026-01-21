@@ -72,63 +72,50 @@ class SequentialSolver(BaseSolver):
             if current_pagoda < min_pagoda:
                 self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
         
+        # Новая стратегия на основе результатов: Beam для небольших досок, DFS для остальных
         # Определяем последовательность решателей от простых к сложным
-        # Порядок: от быстрых/простых к медленным/сложным, но полным
-        strategies = [
-            # 1. Lookup (самый быстрый для известных позиций)
-            ("Lookup", lambda: LookupSolver(use_fallback=False, verbose=False).solve(board)),
-            
-            # 2. DFS (простой, полный, быстрый для маленьких позиций)
-            ("DFS", lambda: DFSSolver(verbose=False, use_pagoda=False).solve(board)),
-            
-            # 3. Beam Search (быстрый, но неполный - пробуем для скорости)
-            ("Beam Search (500)", lambda: BeamSolver(beam_width=500, max_depth=self.max_depth_unlimited, verbose=False).solve(board)),
-            
-            # 4. Zobrist DFS (оптимизированный DFS для глубокого поиска)
+        peg_count = board.peg_count()
+        
+        if peg_count < 10:
+            # Небольшие доски: Lookup → Beam → DFS
+            strategies = [
+                # 1. Lookup (самый быстрый для известных позиций)
+                ("Lookup", lambda: LookupSolver(use_fallback=False, verbose=False).solve(board)),
+                
+                # 2. Beam Search (показал лучшие результаты для небольших досок)
+                ("Beam Search", lambda: BeamSolver(beam_width=500, max_depth=50, verbose=False).solve(board)),
+                
+                # 3. DFS (надёжный fallback)
+                ("DFS", lambda: DFSSolver(verbose=False, use_pagoda=False).solve(board)),
+            ]
+        else:
+            # Большие доски: Lookup → DFS → Beam
+            strategies = [
+                # 1. Lookup (самый быстрый для известных позиций)
+                ("Lookup", lambda: LookupSolver(use_fallback=False, verbose=False).solve(board)),
+                
+                # 2. DFS (показал лучшие результаты для больших досок)
+                ("DFS", lambda: DFSSolver(verbose=False, use_pagoda=False).solve(board)),
+                
+                # 3. Beam Search (быстрый fallback)
+                ("Beam Search", lambda: BeamSolver(beam_width=500, max_depth=50, verbose=False).solve(board)),
+            ]
+        
+        # Добавляем дополнительные решатели только если основные не сработали
+        # Упрощённый список - убрали неэффективные решатели
+        additional_strategies = [
+            # 4. Zobrist DFS (оптимизированный DFS)
             ("Zobrist DFS", lambda: ZobristDFSSolver(verbose=False, use_pagoda=False).solve(board)),
             
             # 5. A* (эвристический, полный)
             ("A*", lambda: AStarSolver(verbose=False).solve(board)),
             
-            # 6. Pattern A* (оптимизированный A*)
-            ("Pattern A*", lambda: PatternAStarSolver(verbose=False).solve(board)),
-            
-            # 7. IDA* (экономия памяти для сложных позиций)
+            # 6. IDA* (экономия памяти)
             ("IDA*", lambda: IDAStarSolver(max_depth=self.max_depth_unlimited, verbose=False).solve(board)),
-            
-            # 8. Bidirectional (двунаправленный поиск)
-            ("Bidirectional", lambda: BidirectionalSolver(
-                max_iterations=self.max_iterations,
-                timeout=self.timeout - (time.time() - start_time) if self.timeout else None,
-                verbose=False
-            ).solve(board)),
-            
-            # 9. Parallel DFS (многопоточный для глубоких позиций)
-            ("Parallel DFS", lambda: ParallelSolver(num_workers=4, verbose=False).solve(board)),
-            
-            # 10. Parallel Beam (многопоточный для больших позиций)
-            ("Parallel Beam", lambda: ParallelBeamSolver(
-                beam_width=500, 
-                max_depth=self.max_depth_unlimited,
-                num_workers=4,
-                verbose=False
-            ).solve(board)),
-            
-            # 11. Exhaustive Search (полный перебор с оценкой - для самых сложных позиций)
-            ("Exhaustive Search", lambda: ExhaustiveSolver(
-                timeout=max(60.0, self.timeout - (time.time() - start_time)),
-                max_depth=self.max_depth_unlimited,
-                verbose=False
-            ).solve(board)),
-            
-            # 12. Brute Force (полный перебор БЕЗ Pagoda pruning - последняя попытка)
-            # Гарантируем минимум 1 час независимо от потраченного времени
-            ("Brute Force", lambda: BruteForceSolver(
-                timeout=max(3600.0, self.timeout),  # Минимум 1 час или весь timeout
-                max_depth=self.max_depth_unlimited,
-                verbose=False
-            ).solve(board)),
         ]
+        
+        # Объединяем основные и дополнительные стратегии
+        strategies = strategies + additional_strategies
         
         # Перебираем решатели последовательно
         for idx, (name, solver_fn) in enumerate(strategies, 1):

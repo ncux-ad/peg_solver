@@ -87,10 +87,14 @@ class GovernorSolver(BaseSolver):
             solution = self._solve_with_timeout(solver_instance, board, solver_timeout, start_time)
             
             if solution:
-                self.stats.time_elapsed = time.time() - start_time
-                self.stats.solution_length = len(solution)
-                self._log(f"✓ Solution found: {len(solution)} moves in {self.stats.time_elapsed:.2f}s")
-                return solution
+                # ВАЛИДАЦИЯ: проверяем, что решение корректное
+                if self._validate_solution(board, solution):
+                    self.stats.time_elapsed = time.time() - start_time
+                    self.stats.solution_length = len(solution)
+                    self._log(f"✓ Solution found: {len(solution)} moves in {self.stats.time_elapsed:.2f}s")
+                    return solution
+                else:
+                    self._log(f"✗ Primary solver вернул невалидное решение, пробуем fallbacks...")
             else:
                 # Fallback: пробуем другие алгоритмы
                 self._log("Primary solver failed or timed out, trying fallbacks...")
@@ -317,10 +321,14 @@ class GovernorSolver(BaseSolver):
                     start_time
                 )
                 if solution:
-                    self.stats.time_elapsed = time.time() - start_time
-                    self.stats.solution_length = len(solution)
-                    self._log(f"✓ Found with {name}! ({len(solution)} moves, {self.stats.time_elapsed:.2f}s)")
-                    return solution
+                    # ВАЛИДАЦИЯ: проверяем, что решение корректное
+                    if self._validate_solution(board, solution):
+                        self.stats.time_elapsed = time.time() - start_time
+                        self.stats.solution_length = len(solution)
+                        self._log(f"✓ Found valid solution with {name}! ({len(solution)} moves, {self.stats.time_elapsed:.2f}s)")
+                        return solution
+                    else:
+                        self._log(f"✗ {name} вернул невалидное решение, продолжаем...")
             except Exception as e:
                 self._log(f"✗ {name} failed: {e}")
         
