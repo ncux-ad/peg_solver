@@ -75,12 +75,29 @@ def _flip_h_pegs(pegs: int) -> int:
 
 class BitBoard:
     """Битовое представление доски Peg Solitaire."""
-    __slots__ = ('pegs', '_hash', '_count')
+    __slots__ = ('pegs', '_hash', '_count', 'valid_mask')
 
-    def __init__(self, pegs: int):
+    def __init__(self, pegs: int, valid_mask: int = None):
+        """
+        Args:
+            pegs: битовая маска фишек
+            valid_mask: маска валидных клеток (где могут быть фишки/дырки).
+                       Если None, определяется автоматически:
+                       - Если все фишки в ENGLISH_VALID_POSITIONS → VALID_MASK (английский крест)
+                       - Иначе → все 49 клеток (произвольная 7x7)
+        """
         self.pegs = pegs
         self._hash = hash(pegs)
         self._count = _popcount(pegs)
+        
+        if valid_mask is None:
+            # Автоопределение: если есть фишки вне английского креста → полная 7x7
+            if pegs & ~VALID_MASK:
+                self.valid_mask = (1 << 49) - 1  # Все 49 клеток
+            else:
+                self.valid_mask = VALID_MASK  # Английский крест (33 клетки)
+        else:
+            self.valid_mask = valid_mask
 
     @classmethod
     def english_start(cls) -> 'BitBoard':
@@ -110,79 +127,59 @@ class BitBoard:
         """
         Генерирует все допустимые ходы: (from, jumped, to).
         
-        По умолчанию использует геометрию английского креста (33 клетки).
-        Если на доске есть фишки за пределами ENGLISH_VALID_POSITIONS,
-        считаем доску произвольной 7x7 и генерируем ходы по всем 49 клеткам.
+        Учитывает valid_mask: ходы возможны только в клетки, которые существуют на доске.
         """
-        # Проверяем, есть ли фишки вне английского креста
-        if self.pegs & ~VALID_MASK:
-            # Произвольная доска 7x7: все 49 клеток валидны
-            moves: List[Tuple[int, int, int]] = []
-            pegs = self.pegs
-            full_mask = (1 << 49) - 1
-            holes = full_mask & ~pegs
-
-            for pos in range(49):
-                if not (pegs >> pos) & 1:
-                    continue
-                r, c = divmod(pos, 7)
-
-                # Вправо
-                if c <= 4:
-                    if ((pegs >> (pos + 1)) & 1) and ((holes >> (pos + 2)) & 1):
-                        moves.append((pos, pos + 1, pos + 2))
-                # Влево
-                if c >= 2:
-                    if ((pegs >> (pos - 1)) & 1) and ((holes >> (pos - 2)) & 1):
-                        moves.append((pos, pos - 1, pos - 2))
-                # Вниз
-                if r <= 4:
-                    if ((pegs >> (pos + 7)) & 1) and ((holes >> (pos + 14)) & 1):
-                        moves.append((pos, pos + 7, pos + 14))
-                # Вверх
-                if r >= 2:
-                    if ((pegs >> (pos - 7)) & 1) and ((holes >> (pos - 14)) & 1):
-                        moves.append((pos, pos - 7, pos - 14))
-
-            return moves
-
-        # Классическая английская доска (крест из 33 клеток)
         moves: List[Tuple[int, int, int]] = []
         pegs = self.pegs
-        holes = VALID_MASK & ~pegs
+        holes = self.valid_mask & ~pegs  # Дырки = валидные клетки без фишек
 
-        # Горизонтальные
-        can_right = pegs & (pegs >> 1) & (holes >> 2)
-        can_left = pegs & (pegs << 1) & (holes << 2)
-        
-        # Вертикальные
-        can_down = pegs & (pegs >> 7) & (holes >> 14)
-        can_up = pegs & (pegs << 7) & (holes << 14)
-        
-        # Один проход по позициям вместо двух
-        for pos in ENGLISH_VALID_POSITIONS:
-            # Горизонтальные ходы
-            if can_right & (1 << pos) and pos % 7 <= 4:
-                moves.append((pos, pos + 1, pos + 2))
-            if can_left & (1 << pos) and pos % 7 >= 2:
-                moves.append((pos, pos - 1, pos - 2))
+        # Генерируем ходы, проверяя что все позиции (from, jumped, to) в valid_mask
+        for pos in range(49):
+            if not (pegs >> pos) & 1:
+                continue
+            if not (self.valid_mask >> pos) & 1:
+                continue  # Эта клетка не существует на доске
             
-            # Вертикальные ходы
-            if can_down & (1 << pos) and pos // 7 <= 4:
+            r, c = divmod(pos, 7)
+
+            # Вправо
+            if c <= 4:
+                jumped = pos + 1
+                to = pos + 2
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
+                        moves.append((pos, jumped, to))
+            
+            # Влево
+            if c >= 2:
+                jumped = pos - 1
+                to = pos - 2
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
+                        moves.append((pos, jumped, to))
+            
+            # Вниз
+            if r <= 4:
+                jumped = pos + 7
                 to = pos + 14
-                if to in ENGLISH_VALID_POSITIONS:
-                    moves.append((pos, pos + 7, to))
-            if can_up & (1 << pos) and pos // 7 >= 2:
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
+                        moves.append((pos, jumped, to))
+            
+            # Вверх
+            if r >= 2:
+                jumped = pos - 7
                 to = pos - 14
-                if to in ENGLISH_VALID_POSITIONS:
-                    moves.append((pos, pos - 7, to))
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
+                        moves.append((pos, jumped, to))
 
         return moves
 
     def apply_move(self, from_pos: int, jumped: int, to_pos: int) -> 'BitBoard':
-        """Применяет ход — O(1) XOR операции."""
+        """Применяет ход — O(1) XOR операции. Сохраняет valid_mask."""
         new_pegs = self.pegs ^ (1 << from_pos) ^ (1 << jumped) ^ (1 << to_pos)
-        return BitBoard(new_pegs)
+        return BitBoard(new_pegs, valid_mask=self.valid_mask)
 
     def is_solved(self) -> bool:
         return self._count == 1
@@ -191,61 +188,66 @@ class BitBoard:
         return self.pegs == ENGLISH_GOAL
 
     def is_dead(self) -> bool:
-        """Проверка тупика (оптимизированная версия)."""
+        """Проверка тупика. Учитывает valid_mask."""
         if self._count <= 1:
             return False
 
         pegs = self.pegs
+        holes = self.valid_mask & ~pegs
 
-        # Произвольная доска 7x7: проверяем ходы по всем 49 клеткам
-        if pegs & ~VALID_MASK:
-            full_mask = (1 << 49) - 1
-            holes = full_mask & ~pegs
+        # Проверяем, есть ли хоть один возможный ход
+        for pos in range(49):
+            if not (pegs >> pos) & 1:
+                continue
+            if not (self.valid_mask >> pos) & 1:
+                continue  # Эта клетка не существует
+            
+            r, c = divmod(pos, 7)
 
-            for pos in range(49):
-                if not (pegs >> pos) & 1:
-                    continue
-                r, c = divmod(pos, 7)
-
-                # Вправо
-                if c <= 4:
-                    if ((pegs >> (pos + 1)) & 1) and ((holes >> (pos + 2)) & 1):
+            # Вправо
+            if c <= 4:
+                jumped = pos + 1
+                to = pos + 2
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
                         return False
-                # Влево
-                if c >= 2:
-                    if ((pegs >> (pos - 1)) & 1) and ((holes >> (pos - 2)) & 1):
+            
+            # Влево
+            if c >= 2:
+                jumped = pos - 1
+                to = pos - 2
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
                         return False
-                # Вниз
-                if r <= 4:
-                    if ((pegs >> (pos + 7)) & 1) and ((holes >> (pos + 14)) & 1):
+            
+            # Вниз
+            if r <= 4:
+                jumped = pos + 7
+                to = pos + 14
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
                         return False
-                # Вверх
-                if r >= 2:
-                    if ((pegs >> (pos - 7)) & 1) and ((holes >> (pos - 14)) & 1):
+            
+            # Вверх
+            if r >= 2:
+                jumped = pos - 7
+                to = pos - 14
+                if ((self.valid_mask >> jumped) & 1) and ((self.valid_mask >> to) & 1):
+                    if ((pegs >> jumped) & 1) and ((holes >> to) & 1):
                         return False
 
-            return True
-
-        # Классическая английская доска (крест из 33 клеток)
-        holes = VALID_MASK & ~pegs
-        
-        # Проверяем, есть ли хоть один ход (битовые операции)
-        can_move = (pegs & (pegs >> 1) & (holes >> 2)) or \
-                   (pegs & (pegs << 1) & (holes << 2)) or \
-                   (pegs & (pegs >> 7) & (holes >> 14)) or \
-                   (pegs & (pegs << 7) & (holes << 14))
-        return not bool(can_move)
+        return True
 
     def canonical(self) -> 'BitBoard':
         """
         Каноническая форма (минимальная из 8 симметрий).
         
         Для классической английской доски (33 клетки) используем все 8 симметрий.
-        Для произвольной 7x7 доски (есть фишки вне ENGLISH_VALID_POSITIONS)
-        симметрии английского креста неприменимы, поэтому возвращаем доску как есть.
+        Для произвольной доски (valid_mask != VALID_MASK) симметрии английского креста
+        неприменимы, поэтому возвращаем доску как есть.
         """
-        # Для произвольной доски 7x7 не применяем симметрии английского креста
-        if self.pegs & ~VALID_MASK:
+        # Для произвольной доски не применяем симметрии английского креста
+        if self.valid_mask != VALID_MASK:
             return self
 
         # Оптимизация: вычисляем все варианты напрямую через pegs, без создания объектов
@@ -271,7 +273,7 @@ class BitBoard:
         min_pegs = min(variants_pegs)
         if min_pegs == self.pegs:
             return self
-        return BitBoard(min_pegs)
+        return BitBoard(min_pegs, valid_mask=self.valid_mask)
 
     def _rotate_90(self) -> 'BitBoard':
         """Поворот на 90° (для обратной совместимости)."""
@@ -285,26 +287,20 @@ class BitBoard:
         """
         Текстовое представление доски.
         
-        - Для классической английской доски рисует крест (пустые клетки вне ENGLISH_VALID_POSITIONS).
-        - Для произвольной 7x7 доски рисует полное поле 7x7 (все 49 клеток видны).
+        - Клетки в valid_mask показываются (● = фишка, ○ = дырка)
+        - Клетки вне valid_mask показываются как пробелы (вырезаны из доски)
         """
         lines = []
-        generic = bool(self.pegs & ~VALID_MASK)
         for r in range(7):
             row = ""
             for c in range(7):
                 pos = r * 7 + c
-                if generic:
-                    # Полная 7x7: показываем и валидные, и "нестандартные" клетки
+                if (self.valid_mask >> pos) & 1:
+                    # Клетка существует на доске
                     row += ("● " if self.has_peg(pos) else "○ ")
                 else:
-                    # Классический крест: как раньше
-                    if pos not in ENGLISH_VALID_POSITIONS:
-                        row += "  "
-                    elif self.has_peg(pos):
-                        row += "● "
-                    else:
-                        row += "○ "
+                    # Клетка вырезана из доски
+                    row += "  "
             lines.append(row.rstrip())
         return "\n".join(lines)
 

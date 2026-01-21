@@ -163,7 +163,9 @@ def solve_stream():
     
     # Конвертируем в битовую маску
     pegs_bits = 0
+    holes_bits = 0
     is_generic_board = False
+    
     for row, col in pegs_coords:
         if 0 <= row < 7 and 0 <= col < 7:
             pos = coords_to_bit(row, col)
@@ -172,11 +174,22 @@ def solve_stream():
                 if pos not in ENGLISH_VALID_POSITIONS:
                     is_generic_board = True
     
+    for row, col in holes_coords:
+        if 0 <= row < 7 and 0 <= col < 7:
+            pos = coords_to_bit(row, col)
+            if 0 <= pos < 49:
+                holes_bits |= (1 << pos)
+                if pos not in ENGLISH_VALID_POSITIONS:
+                    is_generic_board = True
+    
     if pegs_bits == 0:
         return jsonify({
             'success': False,
             'error': 'Нет колышков на доске'
         })
+    
+    # Форма доски определяется из начальной позиции: valid_mask = pegs | holes
+    valid_mask = pegs_bits | holes_bits
     
     # Используем быстрый popcount
     import sys
@@ -189,7 +202,7 @@ def solve_stream():
         x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
         peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
     
-    board = BitBoard(pegs_bits)
+    board = BitBoard(pegs_bits, valid_mask=valid_mask)
     
     # Pagoda-инвариант применяем только для классического английского креста.
     if not is_generic_board:
@@ -595,13 +608,22 @@ def solve():
     # Конвертируем в битовую маску
     # Поддерживаем произвольные позиции на поле 7x7
     pegs_bits = 0
+    holes_bits = 0
     is_generic_board = False  # True, если используются клетки вне английского креста
+    
     for row, col in pegs_coords:
         if 0 <= row < 7 and 0 <= col < 7:
             pos = coords_to_bit(row, col)
-            # Принимаем все позиции на поле 7x7 (0-48)
             if 0 <= pos < 49:
                 pegs_bits |= (1 << pos)
+                if pos not in ENGLISH_VALID_POSITIONS:
+                    is_generic_board = True
+    
+    for row, col in holes_coords:
+        if 0 <= row < 7 and 0 <= col < 7:
+            pos = coords_to_bit(row, col)
+            if 0 <= pos < 49:
+                holes_bits |= (1 << pos)
                 if pos not in ENGLISH_VALID_POSITIONS:
                     is_generic_board = True
     
@@ -610,6 +632,10 @@ def solve():
             'success': False,
             'error': 'Нет колышков на доске'
         })
+    
+    # Форма доски определяется из начальной позиции: valid_mask = pegs | holes
+    # Клетки, где есть фишка ИЛИ дырка, существуют на доске; остальные вырезаны
+    valid_mask = pegs_bits | holes_bits
     
     # Используем быстрый popcount
     import sys
@@ -623,8 +649,8 @@ def solve():
         x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
         peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
     
-    # Создаём битборд
-    board = BitBoard(pegs_bits)
+    # Создаём битборд с маской валидных клеток
+    board = BitBoard(pegs_bits, valid_mask=valid_mask)
     
     # Проверка Pagoda только для классической английской доски.
     # Для произвольных форм 7x7 Pagoda-инвариант не применим, поэтому не режем по нему.
