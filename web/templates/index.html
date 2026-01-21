@@ -147,6 +147,13 @@
                         <small style="display: block; margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.75rem;">
                             Убрать ограничения по времени и глубине поиска
                         </small>
+                        <label id="bruteforce-24h-wrapper" class="checkbox-label" style="margin-top: 0.5rem; display: none; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="bruteforce-24h-checkbox" style="cursor: pointer;">
+                            <span>⏰ Brute Force на 24 часа</span>
+                        </label>
+                        <small id="bruteforce-24h-hint" style="display: none; margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.75rem;">
+                            Только для 💪 Brute Force — увеличивает таймаут до 24 часов
+                        </small>
                     </div>
 
                     <button class="btn btn-solve" id="solve-btn" onclick="solve()">

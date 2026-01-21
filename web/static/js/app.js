@@ -333,6 +333,19 @@ function updateSolverDescription() {
     } else {
         descriptionDiv.textContent = 'Описание недоступно';
     }
+
+    // Показываем доп. опцию 24 часа только для Brute Force
+    const bruteWrapper = document.getElementById('bruteforce-24h-wrapper');
+    const bruteHint = document.getElementById('bruteforce-24h-hint');
+    const bruteCheckbox = document.getElementById('bruteforce-24h-checkbox');
+    if (bruteWrapper && bruteHint && bruteCheckbox) {
+        const show = selectedSolver === 'brute_force';
+        bruteWrapper.style.display = show ? 'flex' : 'none';
+        bruteHint.style.display = show ? 'block' : 'none';
+        if (!show) {
+            bruteCheckbox.checked = false;
+        }
+    }
 }
 
 function initBoard() {
@@ -749,6 +762,7 @@ async function solve() {
     
     const solver = document.getElementById('solver-select').value;
     const unlimited = document.getElementById('unlimited-checkbox').checked;
+    const bruteForce24h = (document.getElementById('bruteforce-24h-checkbox') || {}).checked || false;
     const loading = document.getElementById('loading');
     const progressContainer = document.getElementById('progress-container');
     const progressList = document.getElementById('progress-list');
@@ -770,7 +784,7 @@ async function solve() {
             const response = await fetch('/api/solve-stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pegs, solver, unlimited })
+                body: JSON.stringify({ pegs, solver, unlimited, brute_force_24h: bruteForce24h })
             });
             
             const reader = response.body.getReader();
@@ -844,7 +858,7 @@ async function solve() {
             const response = await fetch('/api/solve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pegs, solver, unlimited })
+                body: JSON.stringify({ pegs, solver, unlimited, brute_force_24h: bruteForce24h })
             });
             
             const data = await response.json();
