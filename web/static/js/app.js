@@ -708,6 +708,9 @@ function loadBoardFromNotation() {
         updateStats();
         hideSolution();
         
+        // Сохраняем доску в "известные" при явной загрузке из нотации (кнопка "Применить")
+        saveCurrentBoard();
+        
         // Показываем сообщение об успехе
         const message = `Загружено: ${pegs.length} колышков, ${holes.length} пустых мест`;
         console.log(message);
@@ -761,13 +764,7 @@ async function updateStats() {
         console.error('Error validating:', error);
     }
     
-    // Сохраняем доску в недавние (с задержкой)
-    clearTimeout(window.saveBoardTimeout);
-    window.saveBoardTimeout = setTimeout(() => {
-        if (typeof saveCurrentBoard === 'function') {
-            saveCurrentBoard();
-        }
-    }, 2000);
+    // НЕ сохраняем автоматически - только по явному запросу (кнопка "Найти Решение" или "Применить")
 }
 
 async function solve() {
@@ -826,6 +823,8 @@ async function solve() {
                             } else if (data.type === 'result') {
                                 if (data.success) {
                                     showSolution(data);
+                                    // Сохраняем доску в "известные" только после явного нажатия "Найти Решение"
+                                    saveCurrentBoard();
                                 } else {
                                     // Красивое сообщение об ошибке с информацией о решателе и времени
                                     const errorMessage = data.error || 'Решение не найдено';
@@ -890,6 +889,8 @@ async function solve() {
             
             if (data.success) {
                 showSolution(data);
+                // Сохраняем доску в "известные" только после явного нажатия "Найти Решение"
+                saveCurrentBoard();
             } else {
                 // Красивое сообщение об ошибке с информацией о решателе и времени
                 const errorMessage = data.error || 'Решение не найдено';
@@ -1061,6 +1062,7 @@ function goToMove(index) {
         item.classList.toggle('active', i === index);
     });
     
+    // Обновляем статистику, но НЕ сохраняем доску (это пошаговое выполнение решения)
     updateStats();
 }
 
