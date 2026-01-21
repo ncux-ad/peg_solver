@@ -3,15 +3,19 @@ solutions - Известные решения и опорные точки.
 """
 
 from .english_solutions import (
-    ENGLISH_SOLUTION_31,
+    get_english_solution,
+    compute_english_solution,
+    verify_solution,
     WaypointSolver,
-    create_waypoints,
-    format_solution_moves
+    create_waypoints_from_solution,
+    format_solution_moves,
 )
 
 __all__ = [
-    'ENGLISH_SOLUTION_31',
+    'get_english_solution',
+    'compute_english_solution',
+    'verify_solution',
     'WaypointSolver',
-    'create_waypoints',
-    'format_solution_moves'
+    'create_waypoints_from_solution',
+    'format_solution_moves',
 ]
