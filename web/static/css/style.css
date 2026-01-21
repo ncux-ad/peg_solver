@@ -41,6 +41,20 @@ body {
     padding: 2rem;
 }
 
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+    
+    header h1 {
+        font-size: 1.75rem;
+    }
+    
+    .subtitle {
+        font-size: 0.9rem;
+    }
+}
+
 header {
     text-align: center;
     margin-bottom: 3rem;
@@ -93,6 +107,47 @@ main {
 @media (max-width: 900px) {
     .board-section {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .board-section {
+        gap: 1rem;
+    }
+    
+    .info-panel {
+        padding: 1rem;
+        gap: 1rem;
+    }
+    
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    
+    .stat {
+        padding: 0.75rem;
+    }
+    
+    .stat-value {
+        font-size: 1.25rem;
+    }
+    
+    .board {
+        max-width: 100%;
+        padding: 0.75rem;
+    }
+    
+    .toast-container {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: none;
+    }
+    
+    .toast {
+        min-width: auto;
+        max-width: none;
     }
 }
 
@@ -149,11 +204,13 @@ main {
     aspect-ratio: 1;
     border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
+    will-change: transform, box-shadow;
+    touch-action: manipulation; /* Улучшает отзывчивость на мобильных */
 }
 
 .cell.empty {
@@ -201,6 +258,10 @@ main {
     box-shadow: 
         0 6px 20px var(--peg-glow),
         inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+.cell.peg:active {
+    transform: scale(0.95);
 }
 
 .cell.highlight-from {
@@ -292,11 +353,17 @@ main {
     font-family: inherit;
     font-size: 0.875rem;
     cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.solver-options select:hover {
+    border-color: var(--accent);
 }
 
 .solver-options select:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .checkbox-label {
@@ -425,7 +492,14 @@ main {
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    will-change: transform;
+    touch-action: manipulation;
+    user-select: none;
+}
+
+.btn:active {
+    transform: scale(0.98);
 }
 
 .btn-primary {
@@ -460,6 +534,10 @@ main {
 .btn-solve:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+}
+
+.btn-solve:active {
+    transform: translateY(0);
 }
 
 .btn-solve:disabled {
@@ -524,6 +602,33 @@ main {
     gap: 0.5rem;
     max-height: 300px;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) var(--bg-tertiary);
+}
+
+.moves-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.moves-list::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+.moves-list::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 4px;
+}
+
+.moves-list::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-hover);
+}
+
+@media (max-width: 768px) {
+    .moves-list {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        max-height: 250px;
+    }
 }
 
 .move-item {
@@ -533,10 +638,15 @@ main {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    will-change: background-color, transform;
+}
+
+.move-item:active {
+    transform: scale(0.95);
 }
 
 .move-item:hover {
@@ -699,6 +809,10 @@ footer {
     transform: translateX(4px);
 }
 
+.recent-board-item:active {
+    transform: translateX(2px);
+}
+
 .recent-board-thumbnail {
     width: 60px;
     height: 60px;
@@ -846,6 +960,7 @@ footer {
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
+    will-change: transform;
 }
 
 @keyframes spin {
@@ -877,6 +992,7 @@ footer {
 
 .progress-check.running {
     animation: pulse 1.5s infinite;
+    will-change: opacity;
 }
 
 .progress-check.completed {
@@ -905,4 +1021,61 @@ footer {
     color: var(--accent);
     font-size: 0.75rem;
     margin-left: 0.5rem;
+}
+
+/* Улучшения доступности */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Улучшения для фокуса (accessibility) */
+*:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Улучшения для скролла */
+.recent-boards-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) var(--bg-tertiary);
+}
+
+.recent-boards-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.recent-boards-list::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+}
+
+.recent-boards-list::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 3px;
+}
+
+/* Улучшения для мобильных устройств */
+@media (max-width: 480px) {
+    .solution-controls {
+        flex-direction: column;
+    }
+    
+    .solution-controls .btn {
+        width: 100%;
+    }
+    
+    .board-controls {
+        flex-direction: column;
+    }
+    
+    .board-controls .btn {
+        width: 100%;
+    }
 }

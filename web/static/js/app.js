@@ -209,6 +209,50 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Enter - найти решение
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            const solveBtn = document.getElementById('solve-btn');
+            if (solveBtn && !solveBtn.disabled) {
+                e.preventDefault();
+                solve();
+            }
+        }
+        
+        // Стрелки для навигации по решению (если решение показано)
+        if (solution && solution.length > 0) {
+            if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                prevMove();
+            } else if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                nextMove();
+            } else if (e.key === ' ' && !e.ctrlKey && !e.metaKey) {
+                // Space для play/pause
+                const activeElement = document.activeElement;
+                if (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    togglePlay();
+                }
+            } else if (e.key === 'Home' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                goToMove(-1);
+            } else if (e.key === 'End' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                goToMove(solution.length - 1);
+            }
+        }
+        
+        // Escape для закрытия модальных окон
+        if (e.key === 'Escape') {
+            const loading = document.getElementById('loading');
+            if (loading && loading.style.display !== 'none') {
+                // Можно добавить отмену решения, но это сложнее
+            }
+        }
+    });
+    
     // Загружаем информацию о модулях
     loadModulesInfo();
     
