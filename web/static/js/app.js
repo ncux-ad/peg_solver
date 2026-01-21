@@ -1073,6 +1073,106 @@ function showSolution(data) {
     );
 }
 
+function formatSolutionForTelegram() {
+    /**
+     * Форматирует решение для отправки в Telegram.
+     * Формат: компактный список ходов с эмодзи.
+     */
+    if (!solution || solution.length === 0) {
+        return '';
+    }
+    
+    const boardNotation = getBoardNotation();
+    const solverName = document.getElementById('solution-stats')?.textContent || 'Решение';
+    
+    let text = `🎯 Решение Peg Solitaire\n\n`;
+    text += `📋 Доска: ${boardNotation}\n`;
+    text += `📊 ${solverName}\n\n`;
+    text += `📝 Ходы:\n`;
+    
+    // Группируем ходы по 5 для читаемости
+    for (let i = 0; i < solution.length; i++) {
+        const move = solution[i];
+        const moveNum = (i + 1).toString().padStart(2, '0');
+        
+        if (i > 0 && i % 5 === 0) {
+            text += '\n'; // Новая строка каждые 5 ходов
+        }
+        
+        text += `${moveNum}. ${move.notation}  `;
+    }
+    
+    text += `\n\n✅ Всего ходов: ${solution.length}`;
+    
+    return text;
+}
+
+function copySolutionForTelegram() {
+    /**
+     * Копирует решение в формате для Telegram в буфер обмена.
+     */
+    if (!solution || solution.length === 0) {
+        showToast('Нет решения для копирования', 'warning', 'Ошибка');
+        return;
+    }
+    
+    const text = formatSolutionForTelegram();
+    const btn = event?.target || document.querySelector('button[onclick="copySolutionForTelegram()"]');
+    const originalText = btn ? btn.textContent : '📱 Telegram';
+    
+    // Пробуем использовать Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            if (btn) {
+                btn.textContent = '✅ Скопировано!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            }
+            showToast('Решение скопировано в буфер обмена для Telegram', 'success', 'Скопировано');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            fallbackCopy(text, btn, originalText);
+        });
+    } else {
+        fallbackCopy(text, btn, originalText);
+    }
+    
+    function fallbackCopy(text, btn, originalText) {
+        // Fallback на создание временного textarea
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                if (btn) {
+                    btn.textContent = '✅ Скопировано!';
+                    btn.classList.add('copied');
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.classList.remove('copied');
+                    }, 2000);
+                }
+                showToast('Решение скопировано в буфер обмена для Telegram', 'success', 'Скопировано');
+            } else {
+                showToast('Не удалось скопировать. Используйте Ctrl+C', 'error', 'Ошибка');
+            }
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            showToast('Не удалось скопировать. Используйте Ctrl+C', 'error', 'Ошибка');
+        } finally {
+            document.body.removeChild(textarea);
+        }
+    }
+}
+
 function hideSolution() {
     document.getElementById('solution-section').style.display = 'none';
     solution = null;

@@ -484,6 +484,12 @@ main {
     border-color: var(--success);
 }
 
+button.copied {
+    background: var(--success) !important;
+    color: white !important;
+    border-color: var(--success) !important;
+}
+
 .btn {
     padding: 0.75rem 1.25rem;
     border: none;
