@@ -157,16 +157,20 @@ def solve_stream():
     holes_coords = data.get('holes', [])
     solver_type = data.get('solver', 'beam')
     unlimited = data.get('unlimited', False)
+    brute_force_24h = data.get('brute_force_24h', False)
     
-    print(f"Solve Stream request: solver={solver_type}, unlimited={unlimited}, pegs={len(pegs_coords)}")
+    print(f"Solve Stream request: solver={solver_type}, unlimited={unlimited}, bf24h={brute_force_24h}, pegs={len(pegs_coords)}")
     
     # Конвертируем в битовую маску
     pegs_bits = 0
+    is_generic_board = False
     for row, col in pegs_coords:
         if 0 <= row < 7 and 0 <= col < 7:
             pos = coords_to_bit(row, col)
             if 0 <= pos < 49:
                 pegs_bits |= (1 << pos)
+                if pos not in ENGLISH_VALID_POSITIONS:
+                    is_generic_board = True
     
     if pegs_bits == 0:
         return jsonify({
@@ -186,17 +190,23 @@ def solve_stream():
         peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
     
     board = BitBoard(pegs_bits)
-    pagoda_val = pagoda_value(board)
     
-    if pagoda_val < MIN_PAGODA_ANY_POS:
-        return jsonify({
-            'success': False,
-            'error': 'Позиция недостижима (Pagoda pruning)',
-            'peg_count': peg_count
-        })
+    # Pagoda-инвариант применяем только для классического английского креста.
+    if not is_generic_board:
+        pagoda_val = pagoda_value(board)
+        
+        if pagoda_val < MIN_PAGODA_ANY_POS:
+            return jsonify({
+                'success': False,
+                'error': 'Позиция недостижима (Pagoda pruning)',
+                'peg_count': peg_count
+            })
     
     # Рассчитываем лимиты на основе производительности
     max_timeout, max_depth_unlimited, max_iterations_unlimited = calculate_solver_limits(unlimited)
+    if solver_type == 'brute_force' and brute_force_24h:
+        max_timeout = max(max_timeout, 86400.0)  # 24 часа
+        print(f"Stream Brute Force 24h enabled: timeout set to {max_timeout}s")
     print(f"Stream Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
     # Создаём queue для передачи событий прогресса
@@ -265,6 +275,14 @@ def solve_stream():
                             ),
                             'parallel': lambda: ParallelSolver(num_workers=4, verbose=False),
                             'parallel_beam': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, max_depth=max_depth_unlimited, verbose=False),
+                            'brute_force': lambda: BruteForceSolver(
+                                timeout=max(3600.0, max_timeout),
+                                max_depth=max_depth_unlimited or 50,
+                                verbose=False,
+                                use_prioritization=False,
+                                use_memoization=False,
+                                full_board=is_generic_board
+                            ),
                         }
                         
                         solver = solvers.get(solver_type, solvers['beam'])()
@@ -570,19 +588,22 @@ def solve():
     holes_coords = data.get('holes', [])
     solver_type = data.get('solver', 'beam')
     unlimited = data.get('unlimited', False)  # Флаг "Без ограничений"
+    brute_force_24h = data.get('brute_force_24h', False)
     
-    print(f"Solve request: solver={solver_type}, unlimited={unlimited}, pegs={len(pegs_coords)}")
+    print(f"Solve request: solver={solver_type}, unlimited={unlimited}, bf24h={brute_force_24h}, pegs={len(pegs_coords)}")
     
     # Конвертируем в битовую маску
     # Поддерживаем произвольные позиции на поле 7x7
     pegs_bits = 0
+    is_generic_board = False  # True, если используются клетки вне английского креста
     for row, col in pegs_coords:
         if 0 <= row < 7 and 0 <= col < 7:
             pos = coords_to_bit(row, col)
             # Принимаем все позиции на поле 7x7 (0-48)
-            # Валидация английской доски будет проверена позже через Pagoda
             if 0 <= pos < 49:
                 pegs_bits |= (1 << pos)
+                if pos not in ENGLISH_VALID_POSITIONS:
+                    is_generic_board = True
     
     if pegs_bits == 0:
         return jsonify({
@@ -602,22 +623,28 @@ def solve():
         x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F
         peg_count = ((x * 0x0101010101010101) >> 56) & 0xFF
     
-    # Проверка Pagoda для произвольных начальных состояний
-    # Цель - 1 колышек в любой валидной позиции (не обязательно центр)
+    # Создаём битборд
     board = BitBoard(pegs_bits)
-    pagoda_val = pagoda_value(board)
     
-    # Для проверки решаемости: текущая Pagoda должна быть >= минимальной среди всех позиций
-    # Это мягкая проверка - более строгие проверки сделает сам решатель
-    if pagoda_val < MIN_PAGODA_ANY_POS:
-        return jsonify({
-            'success': False,
-            'error': 'Позиция недостижима (Pagoda pruning)',
-            'peg_count': peg_count
-        })
+    # Проверка Pagoda только для классической английской доски.
+    # Для произвольных форм 7x7 Pagoda-инвариант не применим, поэтому не режем по нему.
+    if not is_generic_board:
+        pagoda_val = pagoda_value(board)
+        
+        # Для проверки решаемости: текущая Pagoda должна быть >= минимальной среди всех позиций
+        # Это мягкая проверка - более строгие проверки сделает сам решатель
+        if pagoda_val < MIN_PAGODA_ANY_POS:
+            return jsonify({
+                'success': False,
+                'error': 'Позиция недостижима (Pagoda pruning)',
+                'peg_count': peg_count
+            })
     
     # Рассчитываем лимиты на основе производительности
     max_timeout, max_depth_unlimited, max_iterations_unlimited = calculate_solver_limits(unlimited)
+    if solver_type == 'brute_force' and brute_force_24h:
+        max_timeout = max(max_timeout, 86400.0)  # 24 часа
+        print(f"Brute Force 24h enabled: timeout set to {max_timeout}s")
     print(f"Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
     solvers = {
@@ -671,7 +698,8 @@ def solve():
             max_depth=max_depth_unlimited or 50,
             verbose=False,
             use_prioritization=False,  # Отключаем приоритизацию для полного перебора
-            use_memoization=False  # Отключаем мемоизацию для полного перебора (может пропускать решения)
+            use_memoization=False,  # Отключаем мемоизацию для полного перебора (может пропускать решения)
+            full_board=is_generic_board  # Включаем произвольную доску 7x7, если есть позиции вне английского креста
         ),  # Полный перебор БЕЗ Pagoda pruning и БЕЗ мемоизации (последняя попытка)
     }
     

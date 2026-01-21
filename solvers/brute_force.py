@@ -26,17 +26,21 @@ class BruteForceSolver(BaseSolver):
     - Может работать очень долго для сложных позиций
     """
     
-    def __init__(self, use_symmetry: bool = True, 
+    def __init__(self, use_symmetry: bool = True,
                  verbose: bool = False,
                  timeout: float = 3600.0,  # 1 час по умолчанию
                  max_depth: int = 50,
                  use_prioritization: bool = True,  # Отключить приоритизацию для полного перебора
-                 use_memoization: bool = True):  # Отключить мемоизацию для полного перебора
+                 use_memoization: bool = True,  # Отключить мемоизацию для полного перебора
+                 full_board: bool = False):  # Режим произвольной доски 7x7 (все 49 клеток валидны)
         super().__init__(use_symmetry, verbose)
         self.timeout = timeout
         self.max_depth = max_depth
         self.use_prioritization = use_prioritization
         self.use_memoization = use_memoization
+        # Если full_board=True, считаем валидными все 49 клеток 7x7 и генерируем ходы сами,
+        # игнорируя ENGLISH_VALID_POSITIONS внутри BitBoard
+        self.full_board = full_board
         self.start_time = None
         self.memo: Dict[int, Optional[List]] = {}  # Кэш результатов
         self.last_progress_log = 0.0  # Время последнего логирования прогресса
@@ -117,7 +121,12 @@ class BruteForceSolver(BaseSolver):
                 return result
         
         # Получаем ходы
-        moves = board.get_moves()
+        if self.full_board:
+            # Произвольная доска 7x7: генерируем ходы по всем 49 клеткам
+            moves = self._get_moves_full_board(board.pegs)
+        else:
+            # Классическая английская доска (крест из 33 клеток)
+            moves = board.get_moves()
         if not moves:
             # Тупик - нет ходов
             if self.use_memoization:
@@ -135,7 +144,11 @@ class BruteForceSolver(BaseSolver):
                 
                 # Оценка позиции после хода
                 peg_count = new_board.peg_count()
-                num_moves = len(new_board.get_moves())
+                # Для full_board используем тот же генератор ходов, чтобы не терять геометрию
+                if self.full_board:
+                    num_moves = len(self._get_moves_full_board(new_board.pegs))
+                else:
+                    num_moves = len(new_board.get_moves())
                 score = evaluate_position(new_board, num_moves)
                 
                 # Приоритет: меньше оценка = лучше (evaluate_position возвращает меньше = лучше)
@@ -183,6 +196,41 @@ class BruteForceSolver(BaseSolver):
                 self._log(f"🔍 All paths exhausted: visited {self.stats.nodes_visited} nodes, max_depth={self.stats.max_depth}, memo_size={len(self.memo)}")
         
         return None
+
+    def _get_moves_full_board(self, pegs: int) -> List[Tuple[int, int, int]]:
+        """
+        Генерация ходов для произвольной доски 7x7 (все 49 клеток валидны).
+        
+        Правила те же: прыжок на 2 клетки по горизонтали/вертикали через соседний колышек в пустую клетку.
+        """
+        moves: List[Tuple[int, int, int]] = []
+        # Все 49 позиций считаем валидными
+        FULL_MASK = (1 << 49) - 1
+        holes = FULL_MASK & ~pegs
+        
+        for pos in range(49):
+            if not (pegs >> pos) & 1:
+                continue
+            r, c = divmod(pos, 7)
+            
+            # Вправо
+            if c <= 4:
+                if ((pegs >> (pos + 1)) & 1) and ((holes >> (pos + 2)) & 1):
+                    moves.append((pos, pos + 1, pos + 2))
+            # Влево
+            if c >= 2:
+                if ((pegs >> (pos - 1)) & 1) and ((holes >> (pos - 2)) & 1):
+                    moves.append((pos, pos - 1, pos - 2))
+            # Вниз
+            if r <= 4:
+                if ((pegs >> (pos + 7)) & 1) and ((holes >> (pos + 14)) & 1):
+                    moves.append((pos, pos + 7, pos + 14))
+            # Вверх
+            if r >= 2:
+                if ((pegs >> (pos - 7)) & 1) and ((holes >> (pos - 14)) & 1):
+                    moves.append((pos, pos - 7, pos - 14))
+        
+        return moves
     
     def _get_key(self, board: BitBoard) -> int:
         """Получает ключ для мемоизации."""

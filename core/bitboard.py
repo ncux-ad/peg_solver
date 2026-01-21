@@ -107,8 +107,47 @@ class BitBoard:
         return bool(self.pegs & (1 << pos))
 
     def get_moves(self) -> List[Tuple[int, int, int]]:
-        """Генерирует все допустимые ходы: (from, jumped, to)."""
-        moves = []
+        """
+        Генерирует все допустимые ходы: (from, jumped, to).
+        
+        По умолчанию использует геометрию английского креста (33 клетки).
+        Если на доске есть фишки за пределами ENGLISH_VALID_POSITIONS,
+        считаем доску произвольной 7x7 и генерируем ходы по всем 49 клеткам.
+        """
+        # Проверяем, есть ли фишки вне английского креста
+        if self.pegs & ~VALID_MASK:
+            # Произвольная доска 7x7: все 49 клеток валидны
+            moves: List[Tuple[int, int, int]] = []
+            pegs = self.pegs
+            full_mask = (1 << 49) - 1
+            holes = full_mask & ~pegs
+
+            for pos in range(49):
+                if not (pegs >> pos) & 1:
+                    continue
+                r, c = divmod(pos, 7)
+
+                # Вправо
+                if c <= 4:
+                    if ((pegs >> (pos + 1)) & 1) and ((holes >> (pos + 2)) & 1):
+                        moves.append((pos, pos + 1, pos + 2))
+                # Влево
+                if c >= 2:
+                    if ((pegs >> (pos - 1)) & 1) and ((holes >> (pos - 2)) & 1):
+                        moves.append((pos, pos - 1, pos - 2))
+                # Вниз
+                if r <= 4:
+                    if ((pegs >> (pos + 7)) & 1) and ((holes >> (pos + 14)) & 1):
+                        moves.append((pos, pos + 7, pos + 14))
+                # Вверх
+                if r >= 2:
+                    if ((pegs >> (pos - 7)) & 1) and ((holes >> (pos - 14)) & 1):
+                        moves.append((pos, pos - 7, pos - 14))
+
+            return moves
+
+        # Классическая английская доска (крест из 33 клеток)
+        moves: List[Tuple[int, int, int]] = []
         pegs = self.pegs
         holes = VALID_MASK & ~pegs
 
@@ -155,8 +194,39 @@ class BitBoard:
         """Проверка тупика (оптимизированная версия)."""
         if self._count <= 1:
             return False
-        # Быстрая проверка без генерации всех ходов
+
         pegs = self.pegs
+
+        # Произвольная доска 7x7: проверяем ходы по всем 49 клеткам
+        if pegs & ~VALID_MASK:
+            full_mask = (1 << 49) - 1
+            holes = full_mask & ~pegs
+
+            for pos in range(49):
+                if not (pegs >> pos) & 1:
+                    continue
+                r, c = divmod(pos, 7)
+
+                # Вправо
+                if c <= 4:
+                    if ((pegs >> (pos + 1)) & 1) and ((holes >> (pos + 2)) & 1):
+                        return False
+                # Влево
+                if c >= 2:
+                    if ((pegs >> (pos - 1)) & 1) and ((holes >> (pos - 2)) & 1):
+                        return False
+                # Вниз
+                if r <= 4:
+                    if ((pegs >> (pos + 7)) & 1) and ((holes >> (pos + 14)) & 1):
+                        return False
+                # Вверх
+                if r >= 2:
+                    if ((pegs >> (pos - 7)) & 1) and ((holes >> (pos - 14)) & 1):
+                        return False
+
+            return True
+
+        # Классическая английская доска (крест из 33 клеток)
         holes = VALID_MASK & ~pegs
         
         # Проверяем, есть ли хоть один ход (битовые операции)
@@ -167,7 +237,17 @@ class BitBoard:
         return not bool(can_move)
 
     def canonical(self) -> 'BitBoard':
-        """Каноническая форма (минимальная из 8 симметрий)."""
+        """
+        Каноническая форма (минимальная из 8 симметрий).
+        
+        Для классической английской доски (33 клетки) используем все 8 симметрий.
+        Для произвольной 7x7 доски (есть фишки вне ENGLISH_VALID_POSITIONS)
+        симметрии английского креста неприменимы, поэтому возвращаем доску как есть.
+        """
+        # Для произвольной доски 7x7 не применяем симметрии английского креста
+        if self.pegs & ~VALID_MASK:
+            return self
+
         # Оптимизация: вычисляем все варианты напрямую через pegs, без создания объектов
         variants_pegs = [self.pegs]
         current_pegs = self.pegs
@@ -202,18 +282,30 @@ class BitBoard:
         return BitBoard(_flip_h_pegs(self.pegs))
 
     def to_string(self) -> str:
+        """
+        Текстовое представление доски.
+        
+        - Для классической английской доски рисует крест (пустые клетки вне ENGLISH_VALID_POSITIONS).
+        - Для произвольной 7x7 доски рисует полное поле 7x7 (все 49 клеток видны).
+        """
         lines = []
+        generic = bool(self.pegs & ~VALID_MASK)
         for r in range(7):
             row = ""
             for c in range(7):
                 pos = r * 7 + c
-                if pos not in ENGLISH_VALID_POSITIONS:
-                    row += "  "
-                elif self.has_peg(pos):
-                    row += "● "
+                if generic:
+                    # Полная 7x7: показываем и валидные, и "нестандартные" клетки
+                    row += ("● " if self.has_peg(pos) else "○ ")
                 else:
-                    row += "○ "
-            lines.append(row)
+                    # Классический крест: как раньше
+                    if pos not in ENGLISH_VALID_POSITIONS:
+                        row += "  "
+                    elif self.has_peg(pos):
+                        row += "● "
+                    else:
+                        row += "○ "
+            lines.append(row.rstrip())
         return "\n".join(lines)
 
     def __hash__(self) -> int:
