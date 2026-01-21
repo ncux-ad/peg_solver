@@ -277,7 +277,7 @@ def solve_stream():
                     else:
                         # Для других решателей просто отправляем одно событие
                         solvers = {
-                            'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),
+                            'lookup': lambda: LookupSolver(use_fallback=False, verbose=False),
                             'beam': lambda: BeamSolver(beam_width=500, max_depth=max_depth_unlimited, verbose=False),
                             'dfs': lambda: DFSSolver(verbose=False, use_pagoda=False),
                             'astar': lambda: AStarSolver(verbose=False),
@@ -710,7 +710,7 @@ def solve():
     print(f"Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
     solvers = {
-        'lookup': lambda: LookupSolver(use_fallback=True, verbose=False),  # С lookup table + fallback
+        'lookup': lambda: LookupSolver(use_fallback=False, verbose=False),  # Только lookup table, без fallback
         'sequential': lambda: SequentialSolver(
             timeout=max_timeout,
             max_depth_unlimited=max_depth_unlimited,
