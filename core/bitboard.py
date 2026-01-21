@@ -6,7 +6,7 @@ core/bitboard.py
 """
 
 import sys
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Set
 from functools import lru_cache
 
 # Быстрый popcount (подсчёт битов)
@@ -315,3 +315,104 @@ class BitBoard:
 
     def __repr__(self) -> str:
         return f"BitBoard({self._count} pegs)"
+
+
+# =====================================================
+# Утилиты для работы с произвольными досками
+# =====================================================
+
+def get_valid_positions(board: BitBoard) -> Set[int]:
+    """
+    Возвращает множество валидных позиций из board.valid_mask.
+    
+    Замена для ENGLISH_VALID_POSITIONS в коде, который должен работать
+    с произвольными досками.
+    
+    Args:
+        board: BitBoard
+        
+    Returns:
+        Множество позиций (0..48), которые существуют на доске
+    """
+    valid_positions = set()
+    valid_mask = board.valid_mask
+    for pos in range(49):
+        if (valid_mask >> pos) & 1:
+            valid_positions.add(pos)
+    return valid_positions
+
+
+def is_english_board(board: BitBoard) -> bool:
+    """
+    Проверяет, является ли доска классической английской доской.
+    
+    Английская доска имеет valid_mask == VALID_MASK (33 клетки в форме креста).
+    
+    Args:
+        board: BitBoard
+        
+    Returns:
+        True если доска английская, False иначе
+    """
+    return board.valid_mask == VALID_MASK
+
+
+def get_center_position(board: BitBoard) -> Optional[int]:
+    """
+    Возвращает центральную позицию для использования в эвристиках.
+    
+    - Для английской доски: возвращает CENTER_POS (24)
+    - Для произвольных досок: возвращает позицию с минимальным расстоянием
+      до всех колышков (центр масс) или None, если колышков нет
+    
+    Args:
+        board: BitBoard
+        
+    Returns:
+        Позиция центра (0..48) или None
+    """
+    if is_english_board(board):
+        return CENTER_POS
+    
+    # Для произвольных досок вычисляем центр масс всех колышков
+    valid_positions = get_valid_positions(board)
+    if not valid_positions:
+        return None
+    
+    pegs = board.pegs
+    if pegs == 0:
+        return None
+    
+    # Собираем координаты всех колышков
+    peg_coords = []
+    for pos in valid_positions:
+        if (pegs >> pos) & 1:
+            r, c = pos // 7, pos % 7
+            peg_coords.append((r, c))
+    
+    if not peg_coords:
+        return None
+    
+    # Вычисляем центр масс
+    avg_r = sum(r for r, c in peg_coords) / len(peg_coords)
+    avg_c = sum(c for r, c in peg_coords) / len(peg_coords)
+    
+    # Находим ближайшую валидную позицию к центру масс
+    center_r, center_c = int(round(avg_r)), int(round(avg_c))
+    center_pos = coords_to_pos(center_r, center_c)
+    
+    # Если центр масс в валидной позиции, возвращаем его
+    if center_pos in valid_positions:
+        return center_pos
+    
+    # Иначе ищем ближайшую валидную позицию
+    min_dist = float('inf')
+    best_pos = None
+    for pos in valid_positions:
+        r, c = pos // 7, pos % 7
+        dist = abs(r - center_r) + abs(c - center_c)
+        if dist < min_dist:
+            min_dist = dist
+            best_pos = pos
+    
+    return best_pos

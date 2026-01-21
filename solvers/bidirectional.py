@@ -9,7 +9,10 @@ from collections import deque
 import time
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, ENGLISH_GOAL, ENGLISH_VALID_POSITIONS
+from core.bitboard import (
+    BitBoard, ENGLISH_GOAL, ENGLISH_VALID_POSITIONS,
+    get_valid_positions
+)
 from core.utils import DIRECTIONS
 
 
@@ -137,7 +140,9 @@ class BidirectionalSolver(BaseSolver):
             return path  # Возвращаем путь до этого состояния
         
         # Генерируем обратные ходы
-        for pos in ENGLISH_VALID_POSITIONS:
+        # Используем valid_positions вместо ENGLISH_VALID_POSITIONS для произвольных досок
+        valid_positions = get_valid_positions(current)
+        for pos in valid_positions:
             if not current.has_peg(pos):  # это hole
                 for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                     new_board = self._reverse_move(current, pos, dr, dc)
@@ -176,7 +181,9 @@ class BidirectionalSolver(BaseSolver):
         pos1 = r + dr * 7 + dc
         pos2 = r + 2 * (dr * 7 + dc)
         
-        if pos1 not in ENGLISH_VALID_POSITIONS or pos2 not in ENGLISH_VALID_POSITIONS:
+        # Проверяем, что все позиции в valid_mask (существуют на доске)
+        valid_positions = get_valid_positions(board)
+        if pos1 not in valid_positions or pos2 not in valid_positions or r not in valid_positions:
             return None
         
         if board.has_peg(r) or board.has_peg(pos1) or not board.has_peg(pos2):
@@ -187,4 +194,5 @@ class BidirectionalSolver(BaseSolver):
         new_pegs |= (1 << pos1)
         new_pegs ^= (1 << pos2)
         
-        return BitBoard(new_pegs)
+        # Сохраняем valid_mask при создании новой доски
+        return BitBoard(new_pegs, valid_mask=board.valid_mask)

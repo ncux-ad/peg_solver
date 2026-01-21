@@ -11,7 +11,10 @@ from .base import BaseSolver, SolverStats
 from .dfs import DFSSolver
 from .astar import AStarSolver, IDAStarSolver
 from .beam import BeamSolver
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    is_english_board
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 
@@ -36,13 +39,14 @@ class HybridSolver(BaseSolver):
         
         self._log(f"Starting Hybrid Solver (pegs={board.peg_count()}, timeout={self.timeout}s)")
         
-        # Мягкая проверка Pagoda (для произвольных позиций)
-        min_pagoda = min(PAGODA_WEIGHTS.values())
-        current_pagoda = pagoda_value(board)
-        
-        # Более мягкая проверка - не блокируем сразу
-        if current_pagoda < min_pagoda:
-            self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
+        # Мягкая проверка Pagoda (только для английской доски)
+        if is_english_board(board):
+            min_pagoda = min(PAGODA_WEIGHTS.values())
+            current_pagoda = pagoda_value(board)
+            
+            # Более мягкая проверка - не блокируем сразу
+            if current_pagoda < min_pagoda:
+                self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
         
         strategies = [
             ("Beam Search", lambda: BeamSolver(beam_width=200, verbose=False).solve(board)),

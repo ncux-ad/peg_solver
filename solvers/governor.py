@@ -17,7 +17,10 @@ from .pattern_astar import PatternAStarSolver
 from .lookup import LookupSolver
 from .parallel_beam import ParallelBeamSolver
 from .parallel import ParallelSolver
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    get_valid_positions, get_center_position
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 
@@ -126,18 +129,24 @@ class GovernorSolver(BaseSolver):
     
     def _avg_distance_to_center(self, board: BitBoard) -> float:
         """Среднее расстояние колышков до центра."""
-        from core.bitboard import ENGLISH_VALID_POSITIONS
-        
         peg_count = board.peg_count()
         if peg_count == 0:
             return 0.0
         
+        center_pos = get_center_position(board)
+        if center_pos is None:
+            # Если нет центра, используем центр доски (3, 3)
+            center_r, center_c = 3, 3
+        else:
+            center_r, center_c = center_pos // 7, center_pos % 7
+        
         total_dist = 0
-        # Оптимизация: используем только валидные позиции вместо всех 49
-        for pos in ENGLISH_VALID_POSITIONS:
+        # Используем валидные позиции доски
+        valid_positions = get_valid_positions(board)
+        for pos in valid_positions:
             if board.has_peg(pos):
                 row, col = pos // 7, pos % 7
-                dist = abs(row - 3) + abs(col - 3)
+                dist = abs(row - center_r) + abs(col - center_c)
                 total_dist += dist
         
         return total_dist / peg_count if peg_count > 0 else 0.0

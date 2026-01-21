@@ -19,6 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
+from peg_io.cache import save_solution as cache_save_solution
+from solutions.verify import verify_bitboard_solution, bitboard_to_matrix
 from solvers import (
     DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver,
     ParallelBeamSolver, ParallelSolver, AStarSolver, IDAStarSolver,
@@ -310,8 +312,20 @@ def solve_stream():
                     solver_used = solver_type
             
                     if solution:
-                        # Сохраняем решение в базу для будущего использования
-                        # (только если это не LookupSolver - он сам сохраняет через fallback)
+                        # Валидация найденного решения
+                        if not verify_bitboard_solution(board, solution):
+                            result_data = {
+                                'type': 'result',
+                                'success': False,
+                                'error': 'Найдено некорректное решение (валидация не пройдена)',
+                                'peg_count': peg_count,
+                                'time': round(elapsed, 3),
+                                'solver': solver_used
+                            }
+                            progress_queue.put(result_data)
+                            return
+
+                        # Сохраняем решение в lookup-базу (если это не LookupSolver)
                         if solver_type != 'lookup':
                             try:
                                 lookup_solver = LookupSolver(use_fallback=False, verbose=False)
@@ -319,7 +333,7 @@ def solve_stream():
                                 print(f"Solution saved to lookup DB: {len(solution)} moves")
                             except Exception as e:
                                 print(f"Failed to save solution to DB: {e}")
-                        
+
                         # Форматируем решение
                         moves = []
                         for from_pos, jumped, to_pos in solution:
@@ -332,7 +346,14 @@ def solve_stream():
                                 'to': {'row': tr, 'col': tc, 'pos': to_pos},
                                 'notation': f"{chr(fc + ord('A'))}{fr + 1} → {chr(tc + ord('A'))}{tr + 1}"
                             })
-                        
+
+                        # Пытаемся сохранить решение в общий кэш
+                        try:
+                            start_matrix = bitboard_to_matrix(board)
+                            cache_save_solution(start_matrix, [m['notation'] for m in moves])
+                        except Exception as e:
+                            print(f"Failed to save solution to cache: {e}")
+
                         # Отправляем финальный результат
                         result_data = {
                             'type': 'result',
@@ -753,7 +774,17 @@ def solve():
             'time': round(elapsed, 3),
             'solver': solver_type
         })
-    
+
+    # Валидация найденного решения
+    if not verify_bitboard_solution(board, solution):
+        return jsonify({
+            'success': False,
+            'error': 'Найдено некорректное решение (валидация не пройдена)',
+            'peg_count': peg_count,
+            'time': round(elapsed, 3),
+            'solver': solver_type
+        })
+
     # Сохраняем решение в базу для будущего использования
     # (только если это не LookupSolver - он сам сохраняет через fallback)
     if solver_type != 'lookup':
@@ -763,7 +794,7 @@ def solve():
             print(f"Solution saved to lookup DB: {len(solution)} moves")
         except Exception as e:
             print(f"Failed to save solution to DB: {e}")
-    
+
     # Форматируем решение
     moves = []
     for from_pos, jumped, to_pos in solution:
@@ -776,7 +807,14 @@ def solve():
             'to': {'row': tr, 'col': tc, 'pos': to_pos},
             'notation': f"{chr(fc + ord('A'))}{fr + 1} → {chr(tc + ord('A'))}{tr + 1}"
         })
-    
+
+    # Пытаемся сохранить решение в общий кэш
+    try:
+        start_matrix = bitboard_to_matrix(board)
+        cache_save_solution(start_matrix, [m['notation'] for m in moves])
+    except Exception as e:
+        print(f"Failed to save solution to cache: {e}")
+
     return jsonify({
         'success': True,
         'moves': moves,

@@ -8,7 +8,10 @@ from typing import List, Tuple, Optional, Dict
 from heapq import heappush, heappop
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    is_english_board
+)
 from heuristics import pattern_heuristic, pagoda_value, PAGODA_WEIGHTS
 
 
@@ -32,10 +35,11 @@ class PatternAStarSolver(BaseSolver):
         from heuristics import get_pattern_db
         db = get_pattern_db()
         
-        # Pagoda check
-        if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
-            self._log("Position unsolvable (Pagoda)")
-            return None
+        # Pagoda check (только для английской доски)
+        if is_english_board(board):
+            if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
+                self._log("Position unsolvable (Pagoda)")
+                return None
         
         counter = 0
         heap = []

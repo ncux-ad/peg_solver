@@ -8,7 +8,10 @@ from typing import List, Tuple, Optional, Dict
 from heapq import heappush, heappop
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    is_english_board, get_center_position
+)
 from heuristics import combined_heuristic, pagoda_value, PAGODA_WEIGHTS
 
 
@@ -31,10 +34,11 @@ class AStarSolver(BaseSolver):
         
         self._log(f"Starting A* (pegs={board.peg_count()}, aggressive={self.aggressive})")
         
-        # Pagoda check
-        if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
-            self._log("Position unsolvable (Pagoda)")
-            return None
+        # Pagoda check (только для английской доски)
+        if is_english_board(board):
+            if pagoda_value(board) < PAGODA_WEIGHTS[CENTER_POS]:
+                self._log("Position unsolvable (Pagoda)")
+                return None
         
         counter = 0
         heap = []
@@ -107,7 +111,8 @@ class IDAStarSolver(BaseSolver):
         
         self._log(f"Starting IDA* (pegs={board.peg_count()})")
         
-        target_pagoda = PAGODA_WEIGHTS[CENTER_POS]
+        # Целевая Pagoda только для английской доски
+        target_pagoda = PAGODA_WEIGHTS[CENTER_POS] if is_english_board(board) else None
         bound = board.peg_count() - 1
         
         while bound <= self.max_depth:
@@ -138,8 +143,8 @@ class IDAStarSolver(BaseSolver):
         if board.peg_count() == 1:
             return path, f
         
-        # Pagoda pruning
-        if pagoda_value(board) < target_pagoda:
+        # Pagoda pruning (только для английской доски)
+        if target_pagoda is not None and pagoda_value(board) < target_pagoda:
             self.stats.nodes_pruned += 1
             return None, float('inf')
         
@@ -153,7 +158,13 @@ class IDAStarSolver(BaseSolver):
             return None, float('inf')
         
         # Сортировка по расстоянию до центра
-        moves.sort(key=lambda m: abs(m[2] // 7 - 3) + abs(m[2] % 7 - 3))
+        center_pos = get_center_position(board)
+        if center_pos is not None:
+            center_r, center_c = center_pos // 7, center_pos % 7
+            moves.sort(key=lambda m: abs(m[2] // 7 - center_r) + abs(m[2] % 7 - center_c))
+        else:
+            # Fallback: расстояние до центра доски (3, 3)
+            moves.sort(key=lambda m: abs(m[2] // 7 - 3) + abs(m[2] % 7 - 3))
         
         min_threshold = float('inf')
         for move in moves:

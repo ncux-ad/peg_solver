@@ -9,7 +9,10 @@ from typing import List, Tuple, Optional, Set
 
 from .base import BaseSolver, SolverStats
 from core.zobrist import ZobristBitBoard
-from core.bitboard import CENTER_POS
+from core.bitboard import (
+    CENTER_POS,
+    is_english_board, get_center_position
+)
 from heuristics.pagoda import pagoda_value, PAGODA_WEIGHTS
 
 
@@ -68,13 +71,14 @@ class ZobristDFSSolver(BaseSolver):
             return None
         self.visited.add(h)
         
-        # Pagoda pruning (используем pegs напрямую)
+        # Pagoda pruning (только для английской доски)
         if self.use_pagoda:
             from core.bitboard import BitBoard
             temp_board = BitBoard(board.pegs)
-            if pagoda_value(temp_board) < PAGODA_WEIGHTS[CENTER_POS]:
-                self.stats.nodes_pruned += 1
-                return None
+            if is_english_board(temp_board):
+                if pagoda_value(temp_board) < PAGODA_WEIGHTS[CENTER_POS]:
+                    self.stats.nodes_pruned += 1
+                    return None
         
         # Получаем ходы
         moves = board.get_moves()
@@ -97,9 +101,12 @@ class ZobristDFSSolver(BaseSolver):
     
     def _sort_moves(self, moves: List) -> List:
         """Сортирует ходы: ближе к центру = лучше."""
+        # Для определения центра нужна доска, но у нас только moves
+        # Используем центр доски (3, 3) как fallback
         def priority(move):
             _, jumped, to_pos = move
             to_r, to_c = to_pos // 7, to_pos % 7
+            # Используем центр доски (3, 3) как приближение
             return abs(to_r - 3) + abs(to_c - 3)
         
         return sorted(moves, key=priority)

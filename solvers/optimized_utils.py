@@ -6,7 +6,10 @@ solvers/optimized_utils.py
 """
 
 from typing import TYPE_CHECKING
-from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
+from core.bitboard import (
+    BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS,
+    get_valid_positions, is_english_board, get_center_position
+)
 
 if TYPE_CHECKING:
     pass
@@ -67,10 +70,14 @@ def _evaluate_position_python(board: BitBoard, num_moves: int) -> float:
     score = board.peg_count() * 10
     
     # Расстояние до центра
-    for pos in ENGLISH_VALID_POSITIONS:
-        if board.has_peg(pos):
-            r, c = pos // 7, pos % 7
-            score += abs(r - 3) + abs(c - 3)
+    center_pos = get_center_position(board)
+    if center_pos is not None:
+        center_r, center_c = center_pos // 7, center_pos % 7
+        valid_positions = get_valid_positions(board)
+        for pos in valid_positions:
+            if board.has_peg(pos):
+                r, c = pos // 7, pos % 7
+                score += abs(r - center_r) + abs(c - center_c)
     
     # Мобильность
     score -= num_moves * 2
@@ -78,19 +85,20 @@ def _evaluate_position_python(board: BitBoard, num_moves: int) -> float:
     # Изолированные колышки
     score += _count_isolated_python(board) * 15
     
-    # Pagoda проверка
-    from heuristics.pagoda import pagoda_value, PAGODA_WEIGHTS
-    
-    min_pagoda = min(PAGODA_WEIGHTS.values())
-    current_pagoda = pagoda_value(board)
-    target_pagoda = PAGODA_WEIGHTS[CENTER_POS]
-    
-    if board.peg_count() > 15:
-        if current_pagoda < target_pagoda:
-            score += 1000
-    else:
-        if current_pagoda < min_pagoda:
-            score += 1000
+    # Pagoda проверка (только для английской доски)
+    if is_english_board(board):
+        from heuristics.pagoda import pagoda_value, PAGODA_WEIGHTS
+        
+        min_pagoda = min(PAGODA_WEIGHTS.values())
+        current_pagoda = pagoda_value(board)
+        target_pagoda = PAGODA_WEIGHTS[CENTER_POS]
+        
+        if board.peg_count() > 15:
+            if current_pagoda < target_pagoda:
+                score += 1000
+        else:
+            if current_pagoda < min_pagoda:
+                score += 1000
     
     return score
 
@@ -99,8 +107,9 @@ def _count_isolated_python(board: BitBoard) -> int:
     """Подсчёт изолированных колышков (Python версия, оптимизированная)."""
     count = 0
     pegs = board.pegs
+    valid_positions = get_valid_positions(board)
     
-    for pos in ENGLISH_VALID_POSITIONS:
+    for pos in valid_positions:
         if not (pegs & (1 << pos)):
             continue
         
@@ -110,7 +119,7 @@ def _count_isolated_python(board: BitBoard) -> int:
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nr, nc = r + dr, c + dc
             neighbor_pos = nr * 7 + nc
-            if neighbor_pos in ENGLISH_VALID_POSITIONS and (pegs & (1 << neighbor_pos)):
+            if neighbor_pos in valid_positions and (pegs & (1 << neighbor_pos)):
                 has_neighbor = True
                 break
         

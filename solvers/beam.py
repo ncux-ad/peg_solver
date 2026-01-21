@@ -7,7 +7,10 @@ Beam Search — ограниченный по ширине поиск.
 from typing import List, Tuple, Optional
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
+from core.bitboard import (
+    BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS,
+    get_valid_positions, is_english_board, get_center_position
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 from .optimized_utils import evaluate_position_optimized
 
@@ -98,10 +101,14 @@ class BeamSolver(BaseSolver):
         score = board.peg_count() * 10
         
         # Расстояние до центра
-        for pos in ENGLISH_VALID_POSITIONS:
-            if board.has_peg(pos):
-                r, c = pos // 7, pos % 7
-                score += abs(r - 3) + abs(c - 3)
+        center_pos = get_center_position(board)
+        if center_pos is not None:
+            center_r, center_c = center_pos // 7, center_pos % 7
+            valid_positions = get_valid_positions(board)
+            for pos in valid_positions:
+                if board.has_peg(pos):
+                    r, c = pos // 7, pos % 7
+                    score += abs(r - center_r) + abs(c - center_c)
         
         # Мобильность
         score -= len(board.get_moves()) * 2
@@ -109,18 +116,19 @@ class BeamSolver(BaseSolver):
         # Изолированные колышки
         score += self._count_isolated(board) * 15
         
-        # Pagoda (мягкий для произвольных позиций)
-        min_pagoda = min(PAGODA_WEIGHTS.values())
-        current_pagoda = pagoda_value(board)
-        
-        if board.peg_count() > 15:
-            # В начале: строгая проверка
-            if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
-                score += 1000
-        else:
-            # Ближе к концу: мягкая проверка
-            if current_pagoda < min_pagoda:
-                score += 1000
+        # Pagoda (только для английской доски)
+        if is_english_board(board):
+            min_pagoda = min(PAGODA_WEIGHTS.values())
+            current_pagoda = pagoda_value(board)
+            
+            if board.peg_count() > 15:
+                # В начале: строгая проверка
+                if current_pagoda < PAGODA_WEIGHTS[CENTER_POS]:
+                    score += 1000
+            else:
+                # Ближе к концу: мягкая проверка
+                if current_pagoda < min_pagoda:
+                    score += 1000
         
         return score
     
@@ -128,9 +136,10 @@ class BeamSolver(BaseSolver):
         """Количество изолированных колышков (оптимизированная версия)."""
         count = 0
         pegs = board.pegs
+        valid_positions = get_valid_positions(board)
         
         # Предвычисляем соседей для каждой позиции
-        for pos in ENGLISH_VALID_POSITIONS:
+        for pos in valid_positions:
             if not (pegs & (1 << pos)):
                 continue
             
@@ -140,7 +149,7 @@ class BeamSolver(BaseSolver):
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nr, nc = r + dr, c + dc
                 neighbor_pos = nr * 7 + nc
-                if neighbor_pos in ENGLISH_VALID_POSITIONS and (pegs & (1 << neighbor_pos)):
+                if neighbor_pos in valid_positions and (pegs & (1 << neighbor_pos)):
                     has_neighbor = True
                     break
             

@@ -9,7 +9,10 @@ from typing import List, Tuple, Optional, Set, Dict
 import time
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    is_english_board
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 from heuristics.evaluation import evaluate_position
 
@@ -49,12 +52,13 @@ class ExhaustiveSolver(BaseSolver):
         peg_count = board.peg_count()
         self._log(f"Starting Exhaustive Search (pegs={peg_count}, timeout={self.timeout}s, max_depth={self.max_depth})")
         
-        # Мягкая проверка Pagoda
-        min_pagoda = min(PAGODA_WEIGHTS.values())
-        current_pagoda = pagoda_value(board)
-        
-        if self.use_pagoda and current_pagoda < min_pagoda:
-            self._log(f"Warning: Low Pagoda ({current_pagoda} < {min_pagoda}), but continuing...")
+        # Мягкая проверка Pagoda (только для английской доски)
+        if self.use_pagoda and is_english_board(board):
+            min_pagoda = min(PAGODA_WEIGHTS.values())
+            current_pagoda = pagoda_value(board)
+            
+            if current_pagoda < min_pagoda:
+                self._log(f"Warning: Low Pagoda ({current_pagoda} < {min_pagoda}), but continuing...")
         
         result = self._exhaustive_search(board, [])
         
@@ -95,8 +99,8 @@ class ExhaustiveSolver(BaseSolver):
                 self.stats.nodes_pruned += 1
             return result
         
-        # Мягкий Pagoda pruning
-        if self.use_pagoda:
+        # Мягкий Pagoda pruning (только для английской доски)
+        if self.use_pagoda and is_english_board(board):
             min_pagoda = min(PAGODA_WEIGHTS.values())
             current_pagoda = pagoda_value(board)
             

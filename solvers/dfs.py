@@ -8,7 +8,10 @@ Dynamic Programming подход.
 from typing import List, Tuple, Optional, Set
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    is_english_board, get_center_position
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 
@@ -56,10 +59,8 @@ class DFSSolver(BaseSolver):
             self.stats.nodes_pruned += 1
             return None
         
-        # Pagoda pruning (мягкий для произвольных позиций)
-        # Для английской доски с финальным колышком в центре - строгий
-        # Для произвольных позиций - мягкий (минимальный Pagoda вес)
-        if self.use_pagoda:
+        # Pagoda pruning (только для английской доски)
+        if self.use_pagoda and is_english_board(board):
             min_pagoda = min(PAGODA_WEIGHTS.values())  # Минимум для любой позиции
             current_pagoda = pagoda_value(board)
             
@@ -101,11 +102,24 @@ class DFSSolver(BaseSolver):
     
     def _sort_moves(self, board: BitBoard, moves: List) -> List:
         """Сортирует ходы: ближе к центру = лучше."""
+        center_pos = get_center_position(board)
+        
         def priority(move):
             _, jumped, to_pos = move
             to_r, to_c = to_pos // 7, to_pos % 7
-            center_dist = abs(to_r - 3) + abs(to_c - 3)
-            pagoda_bonus = -PAGODA_WEIGHTS.get(jumped, 0) * 0.1
+            
+            if center_pos is not None:
+                center_r, center_c = center_pos // 7, center_pos % 7
+                center_dist = abs(to_r - center_r) + abs(to_c - center_c)
+            else:
+                # Если нет центра, используем расстояние до центра доски (3, 3)
+                center_dist = abs(to_r - 3) + abs(to_c - 3)
+            
+            # Pagoda bonus только для английской доски
+            pagoda_bonus = 0
+            if is_english_board(board):
+                pagoda_bonus = -PAGODA_WEIGHTS.get(jumped, 0) * 0.1
+            
             return center_dist + pagoda_bonus
         
         return sorted(moves, key=priority)

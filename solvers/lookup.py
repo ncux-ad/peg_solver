@@ -11,7 +11,10 @@ import json
 import pickle
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, ENGLISH_START, ENGLISH_GOAL
+from core.bitboard import (
+    BitBoard, ENGLISH_START, ENGLISH_GOAL,
+    is_english_board
+)
 from solvers.beam import BeamSolver
 from solvers.dfs import DFSSolver
 
@@ -127,7 +130,12 @@ class LookupSolver(BaseSolver):
         return None
     
     def _check_canonical_match(self, board: BitBoard) -> Optional[List]:
-        """Проверяет совпадение канонической формы."""
+        """Проверяет совпадение канонической формы (только для английской доски)."""
+        # Для произвольных досок canonical() возвращает доску как есть,
+        # поэтому проверяем только если это английская доска
+        if not is_english_board(board):
+            return None
+        
         canonical = board.canonical()
         
         if canonical.pegs in self.solutions_db:
@@ -150,7 +158,11 @@ class LookupSolver(BaseSolver):
         return solution  # TODO: полная трансформация
     
     def _check_waypoints(self, board: BitBoard) -> Optional[List]:
-        """Проверяет опорные точки (waypoints)."""
+        """Проверяет опорные точки (waypoints) - только для английской доски."""
+        # Для произвольных досок waypoints не применимы
+        if not is_english_board(board):
+            return None
+        
         canonical = board.canonical()
         
         if canonical.pegs in self.waypoints_db:
@@ -169,8 +181,14 @@ class LookupSolver(BaseSolver):
         
         if solution:
             # Сохраняем в базу для будущего использования
-            canonical = board.canonical()
-            self.solutions_db[canonical.pegs] = solution
+            # Для произвольных досок используем pegs напрямую (без canonical)
+            # Для английской доски используем canonical
+            if is_english_board(board):
+                canonical = board.canonical()
+                key = canonical.pegs
+            else:
+                key = board.pegs
+            self.solutions_db[key] = solution
             self._save_solutions()
             self._log(f"Solution found by fallback and saved to DB")
         
@@ -178,10 +196,18 @@ class LookupSolver(BaseSolver):
     
     def add_solution(self, board: BitBoard, solution: List[Tuple[int, int, int]]):
         """Добавляет решение в базу."""
-        canonical = board.canonical()
-        self.solutions_db[canonical.pegs] = solution
+        # Для произвольных досок используем pegs напрямую (без canonical)
+        # Для английской доски используем canonical
+        if is_english_board(board):
+            canonical = board.canonical()
+            key = canonical.pegs
+        else:
+            key = board.pegs
+        self.solutions_db[key] = solution
         self._save_solutions()
-        self._build_waypoints()  # Пересобираем waypoints
+        # Пересобираем waypoints только для английской доски
+        if is_english_board(board):
+            self._build_waypoints()
     
     def _save_solutions(self):
         """Сохраняет базу решений."""

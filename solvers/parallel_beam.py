@@ -9,7 +9,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
+from core.bitboard import (
+    BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS,
+    get_valid_positions, is_english_board, get_center_position
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 from .optimized_utils import evaluate_position_optimized
 
@@ -30,26 +33,32 @@ def _evaluate_board(state_data: Tuple[int, List]) -> Tuple[float, int, List]:
         score = evaluate_position(board)
     except ImportError:
         # Fallback на оригинальную версию
-        from core.bitboard import ENGLISH_VALID_POSITIONS, CENTER_POS
+        from core.bitboard import get_valid_positions, is_english_board, get_center_position
         from heuristics import pagoda_value, PAGODA_WEIGHTS
         
         num_moves = len(board.get_moves())
         score = board.peg_count() * 10.0
         
-        center_row, center_col = 3, 3
-        for pos in ENGLISH_VALID_POSITIONS:
-            if board.has_peg(pos):
-                r, c = pos // 7, pos % 7
-                score += abs(r - center_row) + abs(c - center_col)
+        # Расстояние до центра
+        center_pos = get_center_position(board)
+        if center_pos is not None:
+            center_r, center_c = center_pos // 7, center_pos % 7
+            valid_positions = get_valid_positions(board)
+            for pos in valid_positions:
+                if board.has_peg(pos):
+                    r, c = pos // 7, pos % 7
+                    score += abs(r - center_r) + abs(c - center_c)
         
         score -= num_moves * 2.0
         
-        current_pagoda = pagoda_value(board)
-        target_pagoda = PAGODA_WEIGHTS.get(CENTER_POS, 0)
-        
-        if board.peg_count() > 15:
-            if current_pagoda < target_pagoda:
-                score += 1000.0
+        # Pagoda проверка (только для английской доски)
+        if is_english_board(board):
+            current_pagoda = pagoda_value(board)
+            target_pagoda = PAGODA_WEIGHTS.get(CENTER_POS, 0)
+            
+            if board.peg_count() > 15:
+                if current_pagoda < target_pagoda:
+                    score += 1000.0
     
     return (score, pegs, path)
 
@@ -159,14 +168,15 @@ class ParallelBeamSolver(BaseSolver):
     def _count_isolated(self, board: BitBoard) -> int:
         """Количество изолированных колышков."""
         count = 0
-        for pos in ENGLISH_VALID_POSITIONS:
+        valid_positions = get_valid_positions(board)
+        for pos in valid_positions:
             if not board.has_peg(pos):
                 continue
             r, c = pos // 7, pos % 7
             has_neighbor = any(
                 board.has_peg(nr * 7 + nc)
                 for nr, nc in [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
-                if (nr * 7 + nc) in ENGLISH_VALID_POSITIONS
+                if (nr * 7 + nc) in valid_positions
             )
             if not has_neighbor:
                 count += 1

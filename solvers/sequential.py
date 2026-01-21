@@ -18,7 +18,10 @@ from .pattern_astar import PatternAStarSolver
 from .bidirectional import BidirectionalSolver
 from .parallel import ParallelSolver
 from .parallel_beam import ParallelBeamSolver
-from core.bitboard import BitBoard, CENTER_POS
+from core.bitboard import (
+    BitBoard, CENTER_POS,
+    is_english_board
+)
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
 
@@ -61,12 +64,13 @@ class SequentialSolver(BaseSolver):
         self._log(f"Starting Sequential Solver (pegs={peg_count}, timeout={self.timeout}s)")
         self._log("Перебор решателей от простых к сложным до получения решения...")
         
-        # Мягкая проверка Pagoda
-        min_pagoda = min(PAGODA_WEIGHTS.values())
-        current_pagoda = pagoda_value(board)
-        
-        if current_pagoda < min_pagoda:
-            self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
+        # Мягкая проверка Pagoda (только для английской доски)
+        if is_english_board(board):
+            min_pagoda = min(PAGODA_WEIGHTS.values())
+            current_pagoda = pagoda_value(board)
+            
+            if current_pagoda < min_pagoda:
+                self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
         
         # Определяем последовательность решателей от простых к сложным
         # Порядок: от быстрых/простых к медленным/сложным, но полным

@@ -16,7 +16,9 @@ import time
 
 from core.bitboard import BitBoard
 from peg_io import parse_input, create_english_board, display_board, format_solution
+from peg_io.cache import save_solution as cache_save_solution
 from peg_io.visualizer import format_bitboard_solution
+from solutions.verify import verify_bitboard_solution, bitboard_to_matrix
 from solvers import (
     DFSSolver, AStarSolver, IDAStarSolver,
     BeamSolver, ParallelSolver, HybridSolver
@@ -34,22 +36,38 @@ SOLVERS = {
 
 
 def solve_matrix_board(board_matrix, solver_name='hybrid'):
-    """Решает доску в матричном формате."""
-    from core.board import Board
-    
-    board_obj = Board.from_matrix(board_matrix)
-    # Конвертируем в BitBoard для решателей
-    pegs = 0
-    for r, c in board_obj.pegs:
-        pos = r * 7 + c
-        pegs |= (1 << pos)
-    
-    bitboard = BitBoard(pegs)
-    return solve_bitboard(bitboard, solver_name)
+    """Решает доску в матричном формате и сохраняет корректное решение в кэш."""
+    # Конвертируем матрицу в BitBoard: валидные клетки = PEG или HOLE
+    pegs_bits = 0
+    valid_mask = 0
+    rows = len(board_matrix)
+    cols = len(board_matrix[0]) if rows > 0 else 0
+
+    for r in range(rows):
+        for c in range(cols):
+            pos = r * 7 + c
+            cell = board_matrix[r][c]
+            if cell == '●':  # PEG
+                pegs_bits |= (1 << pos)
+                valid_mask |= (1 << pos)
+            elif cell == '○':  # HOLE
+                valid_mask |= (1 << pos)
+            # '▫' считаем вырезанной клеткой (вне valid_mask)
+
+    bitboard = BitBoard(pegs_bits, valid_mask=valid_mask if valid_mask else None)
+    return solve_bitboard(bitboard, solver_name, initial_matrix=board_matrix)
 
 
-def solve_bitboard(board, solver_name='hybrid'):
-    """Решает BitBoard."""
+def solve_bitboard(board, solver_name='hybrid', initial_matrix=None):
+    """
+    Решает BitBoard, проверяет найденное решение и при успехе сохраняет его в кэш.
+
+    Args:
+        board: начальное состояние BitBoard
+        solver_name: имя решателя
+        initial_matrix: исходная матрица доски (если есть). Если None,
+                        матрица будет восстановлена из BitBoard.
+    """
     solver_class = SOLVERS.get(solver_name, HybridSolver)
     solver = solver_class(verbose=True)
     
@@ -57,15 +75,36 @@ def solve_bitboard(board, solver_name='hybrid'):
     result = solver.solve(board)
     elapsed = time.time() - start
     
-    if result:
-        formatted = format_bitboard_solution(result)
-        print(f"\n{format_solution(formatted)}")
-        print(f"\n⏱ Время: {elapsed:.3f}с")
-        return formatted
-    else:
+    if not result:
         print("\n❌ Решение не найдено")
         print(f"⏱ Время: {elapsed:.3f}с")
         return None
+
+    # Валидация решения на BitBoard (учитывает valid_mask)
+    if not verify_bitboard_solution(board, result):
+        print("\n❌ Найдено некорректное решение (валидация не пройдена), кэширование пропущено")
+        return None
+
+    # Форматируем решение для вывода
+    formatted = format_bitboard_solution(result)
+    print(f"\n{format_solution(formatted)}")
+    print(f"\n⏱ Время: {elapsed:.3f}с")
+
+    # Подготавливаем матрицу для кэширования
+    try:
+        if initial_matrix is not None:
+            start_matrix = initial_matrix
+        else:
+            # Восстанавливаем матрицу из BitBoard (по valid_mask)
+            start_matrix = bitboard_to_matrix(board)
+
+        # Сохраняем решение в общий кэш
+        cache_save_solution(start_matrix, formatted)
+    except Exception as e:
+        # Ошибка кэширования не должна ломать основной сценарий
+        print(f"⚠️ Не удалось сохранить решение в кэш: {e}")
+
+    return formatted
 
 
 def main():
