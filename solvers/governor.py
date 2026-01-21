@@ -335,3 +335,16 @@ class GovernorSolver(BaseSolver):
         self.stats.time_elapsed = time.time() - start_time
         self._log(f"✗ No solution found ({self.stats.time_elapsed:.2f}s)")
         return None
+    
+    def _validate_solution(self, initial_board: BitBoard, solution: List[Tuple[int, int, int]]) -> bool:
+        """Проверяет, что решение валидное (приводит к победному состоянию - 1 колышек)."""
+        try:
+            current_board = initial_board
+            for move in solution:
+                current_board = current_board.apply_move(*move)
+            
+            # Проверяем, что остался ровно 1 колышек (победное состояние)
+            return current_board.peg_count() == 1
+        except Exception as e:
+            self._log(f"Ошибка валидации решения: {e}")
+            return False
