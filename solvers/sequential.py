@@ -150,8 +150,17 @@ class SequentialSolver(BaseSolver):
                 solver_elapsed = time.time() - solver_start
                 
                 if result is not None:
-                    # Проверяем, что решение легальное (победное)
-                    if self._validate_solution(board, result):
+                    # Для Lookup не валидируем - он возвращает только валидные решения из базы
+                    if name == "Lookup":
+                        if result:
+                            self.stats.time_elapsed = time.time() - start_time
+                            self.stats.solution_length = len(result)
+                            self._log(f"✓ Решение найдено с {name}! ({len(result)} ходов, {solver_elapsed:.2f}s, всего {self.stats.time_elapsed:.2f}s)")
+                            return result
+                        else:
+                            self._log(f"✗ {name} не нашёл решение ({solver_elapsed:.2f}s)")
+                    # Для остальных решателей проверяем валидность
+                    elif self._validate_solution(board, result):
                         self.stats.time_elapsed = time.time() - start_time
                         self.stats.solution_length = len(result)
                         self._log(f"✓ Решение найдено с {name}! ({len(result)} ходов, {solver_elapsed:.2f}s, всего {self.stats.time_elapsed:.2f}s)")

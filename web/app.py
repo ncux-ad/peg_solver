@@ -448,6 +448,7 @@ class GovernorSolverWithProgress(GovernorSolver):
         lookup_solver = LookupSolver(use_fallback=False, verbose=False)
         solution = lookup_solver.solve(board)
         lookup_elapsed = time.time() - lookup_start
+        print(f"[Governor] Lookup result: {solution is not None}, length: {len(solution) if solution else 0}, board.pegs: {board.pegs}")
         self.progress_callback('Lookup', 'completed' if solution else 'failed', lookup_elapsed)
         
         if solution:
@@ -573,9 +574,23 @@ class SequentialSolverWithProgress(SequentialSolver):
                 result = solver_fn()
                 solver_elapsed = time.time() - solver_start
                 
-                if result is not None and self._validate_solution(board, result):
-                    self.progress_callback(name, 'completed', solver_elapsed, len(strategies), idx)
-                    return result
+                # Для Lookup логируем результат для отладки
+                if name == "Lookup":
+                    print(f"[Sequential] Lookup result: {result is not None}, length: {len(result) if result else 0}, board.pegs: {board.pegs}")
+                
+                if result is not None:
+                    # Для Lookup не валидируем - он возвращает только валидные решения из базы
+                    if name == "Lookup":
+                        if result:
+                            self.progress_callback(name, 'completed', solver_elapsed, len(strategies), idx)
+                            return result
+                        else:
+                            self.progress_callback(name, 'failed', solver_elapsed, len(strategies), idx)
+                    elif self._validate_solution(board, result):
+                        self.progress_callback(name, 'completed', solver_elapsed, len(strategies), idx)
+                        return result
+                    else:
+                        self.progress_callback(name, 'failed', solver_elapsed, len(strategies), idx)
                 else:
                     self.progress_callback(name, 'failed', solver_elapsed, len(strategies), idx)
             except Exception as e:
