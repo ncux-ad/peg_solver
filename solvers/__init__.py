@@ -11,6 +11,10 @@ solvers - Все решатели Peg Solitaire
 - HybridSolver: комбинирует все стратегии
 """
 
+from .simple_dfs import SimpleDFSSolver
+from .dfs_memo import DFSMemoSolver
+from .astar_simple import AStarSimpleSolver
+from .beam_simple import BeamSimpleSolver
 from .dfs import DFSSolver
 from .zobrist_dfs import ZobristDFSSolver
 from .astar import AStarSolver, IDAStarSolver
@@ -27,6 +31,10 @@ from .exhaustive import ExhaustiveSolver
 from .brute_force import BruteForceSolver
 
 __all__ = [
+    'SimpleDFSSolver',
+    'DFSMemoSolver',
+    'AStarSimpleSolver',
+    'BeamSimpleSolver',
     'DFSSolver',
     'ZobristDFSSolver',
     'AStarSolver', 

@@ -1,0 +1,136 @@
+"""
+solvers/beam_simple.py
+
+Beam Search решатель - Фаза 2.3.
+Быстрый неполный решатель для позиций где полное решение не требуется.
+"""
+
+from typing import List, Tuple, Optional
+
+from .base import BaseSolver, SolverStats
+from core.bitboard import BitBoard, get_center_position
+from heuristics.basic import heuristic_peg_count, heuristic_distance_to_center
+
+
+class BeamSimpleSolver(BaseSolver):
+    """
+    Beam Search решатель.
+    
+    Особенности:
+    - Хранит только top-K лучших состояний на каждом уровне
+    - Быстрый, но не гарантирует нахождение решения
+    - Полезен для быстрой оценки позиций
+    
+    Алгоритм:
+    1. Начинаем с начального состояния
+    2. На каждом шаге расширяем все состояния из beam
+    3. Оцениваем все новые состояния
+    4. Оставляем только top-K лучших
+    5. Повторяем пока не найдём решение или не исчерпаем beam
+    """
+    
+    def __init__(self, beam_width: int = 100, use_symmetry: bool = True, 
+                 verbose: bool = False):
+        """
+        Args:
+            beam_width: ширина луча (количество состояний на уровне)
+            use_symmetry: использовать канонические формы
+            verbose: выводить отладочную информацию
+        """
+        super().__init__(use_symmetry=use_symmetry, verbose=verbose)
+        self.beam_width = beam_width
+    
+    def solve(self, board: BitBoard) -> Optional[List[Tuple[int, int, int]]]:
+        """
+        Решает головоломку алгоритмом Beam Search.
+        
+        Args:
+            board: начальная позиция
+            
+        Returns:
+            Список ходов (from, jumped, to) или None если решение не найдено
+        """
+        self.stats = SolverStats()
+        
+        self._log(f"Starting Beam Search (pegs={board.peg_count()}, beam_width={self.beam_width})")
+        
+        # Beam: список (score, steps, board, path)
+        beam = [(self._evaluate(board), 0, board, [])]
+        visited = set()
+        
+        max_iterations = 1000  # Защита от бесконечного цикла
+        iteration = 0
+        
+        while beam and iteration < max_iterations:
+            iteration += 1
+            new_beam = []
+            
+            for score, steps, current, path in beam:
+                self.stats.nodes_visited += 1
+                self.stats.max_depth = max(self.stats.max_depth, steps)
+                
+                # Проверка победы
+                if current.peg_count() == 1:
+                    self.stats.solution_length = len(path)
+                    self._log(f"Solution found: {len(path)} moves")
+                    self._log(f"Stats: {self.stats}")
+                    return path
+                
+                # Проверка тупика
+                if current.is_dead():
+                    self.stats.nodes_pruned += 1
+                    continue
+                
+                # Получаем все возможные ходы
+                moves = current.get_moves()
+                if not moves:
+                    continue
+                
+                # Расширяем состояние
+                for move in moves:
+                    new_board = current.apply_move(*move)
+                    new_key = self._get_key(new_board)
+                    
+                    # Пропускаем уже посещённые
+                    if new_key in visited:
+                        continue
+                    
+                    visited.add(new_key)
+                    new_path = path + [move]
+                    new_score = self._evaluate(new_board)
+                    new_steps = steps + 1
+                    
+                    new_beam.append((new_score, new_steps, new_board, new_path))
+            
+            # Оставляем только top-K лучших
+            new_beam.sort(key=lambda x: x[0])  # Сортируем по score (меньше = лучше)
+            beam = new_beam[:self.beam_width]
+            
+            if not beam:
+                break
+        
+        self._log("No solution found (beam exhausted)")
+        self._log(f"Stats: {self.stats}")
+        return None
+    
+    def _evaluate(self, board: BitBoard) -> float:
+        """
+        Оценивает позицию (меньше = лучше).
+        
+        Args:
+            board: состояние доски
+            
+        Returns:
+            Оценка позиции
+        """
+        # Базовая эвристика: количество колышков
+        score = heuristic_peg_count(board)
+        
+        # Дополнительно: расстояние до центра
+        center_pos = get_center_position(board)
+        if center_pos is not None:
+            dist = heuristic_distance_to_center(board,
+                center=(center_pos // 7, center_pos % 7))
+            score += dist * 0.1
+        
+        return score
