@@ -487,6 +487,20 @@ function getPegs() {
     return pegs;
 }
 
+function getHoles() {
+    const holes = [];
+    // Собираем все пустые места (holes) со всего поля 7x7
+    for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+            const key = `${row},${col}`;
+            if (boardState[key] === 'hole') {
+                holes.push([row, col]);
+            }
+        }
+    }
+    return holes;
+}
+
 function getBoardNotation() {
     /**
      * Генерирует текстовое представление доски в формате координат.
@@ -760,6 +774,7 @@ async function solve() {
     const pegs = getPegs();
     if (pegs.length < 2) return;
     
+    const holes = getHoles();
     const solver = document.getElementById('solver-select').value;
     const unlimited = document.getElementById('unlimited-checkbox').checked;
     const bruteForce24h = (document.getElementById('bruteforce-24h-checkbox') || {}).checked || false;
@@ -855,13 +870,23 @@ async function solve() {
     } else {
         // Для обычных решателей используем старый API
         try {
+            // Логируем запрос на решение для отладки
+            console.log('Solve request payload', {
+                pegs,
+                holes,
+                solver,
+                unlimited,
+                bruteForce24h
+            });
+
             const response = await fetch('/api/solve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pegs, solver, unlimited, brute_force_24h: bruteForce24h })
+                body: JSON.stringify({ pegs, holes, solver, unlimited, brute_force_24h: bruteForce24h })
             });
             
             const data = await response.json();
+            console.log('Solve response', data);
             
             if (data.success) {
                 showSolution(data);
