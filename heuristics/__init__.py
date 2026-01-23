@@ -30,6 +30,13 @@ from .pattern_db import (
     get_pattern_db
 )
 from .evaluation import evaluate_position
+from .arbitrary import (
+    heuristic_distance_to_center_arbitrary,
+    heuristic_isolated_arbitrary,
+    heuristic_cluster_arbitrary,
+    heuristic_mobility_arbitrary,
+    combined_heuristic_arbitrary,
+)
 
 __all__ = [
     'heuristic_peg_count',
@@ -46,5 +53,10 @@ __all__ = [
     'pattern_heuristic',
     'combined_pattern_heuristic',
     'get_pattern_db',
-    'evaluate_position'
+    'evaluate_position',
+    'heuristic_distance_to_center_arbitrary',
+    'heuristic_isolated_arbitrary',
+    'heuristic_cluster_arbitrary',
+    'heuristic_mobility_arbitrary',
+    'combined_heuristic_arbitrary',
 ]

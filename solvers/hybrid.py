@@ -37,7 +37,8 @@ class HybridSolver(BaseSolver):
         self.stats = SolverStats()
         start_time = time.time()
         
-        self._log(f"Starting Hybrid Solver (pegs={board.peg_count()}, timeout={self.timeout}s)")
+        peg_count = board.peg_count()
+        self._log(f"Starting Hybrid Solver (pegs={peg_count}, timeout={self.timeout}s)")
         
         # Мягкая проверка Pagoda (только для английской доски)
         if is_english_board(board):
@@ -48,12 +49,20 @@ class HybridSolver(BaseSolver):
             if current_pagoda < min_pagoda:
                 self._log(f"Warning: Low Pagoda value ({current_pagoda} < {min_pagoda}), but continuing...")
         
-        strategies = [
-            ("Beam Search", lambda: BeamSolver(beam_width=200, verbose=False).solve(board)),
-            ("DFS + Memo", lambda: DFSSolver(verbose=False).solve(board)),
-            ("A* Aggressive", lambda: AStarSolver(aggressive=True, verbose=False).solve(board)),
-            ("IDA*", lambda: IDAStarSolver(verbose=False).solve(board)),
-        ]
+        # Новая стратегия: Beam для небольших досок, DFS для остальных
+        # Beam показал лучшие результаты для небольших досок, DFS для остальных
+        if peg_count < 10:
+            # Небольшие доски: Beam Search (быстрый)
+            strategies = [
+                ("Beam Search", lambda: BeamSolver(beam_width=500, max_depth=50, verbose=False).solve(board)),
+                ("DFS", lambda: DFSSolver(verbose=False, use_pagoda=False).solve(board)),
+            ]
+        else:
+            # Большие доски: DFS (надёжный)
+            strategies = [
+                ("DFS", lambda: DFSSolver(verbose=False, use_pagoda=False).solve(board)),
+                ("Beam Search", lambda: BeamSolver(beam_width=500, max_depth=50, verbose=False).solve(board)),
+            ]
         
         for name, solver_fn in strategies:
             elapsed = time.time() - start_time
@@ -66,13 +75,30 @@ class HybridSolver(BaseSolver):
             try:
                 result = solver_fn()
                 if result is not None:
-                    self.stats.time_elapsed = time.time() - start_time
-                    self.stats.solution_length = len(result)
-                    self._log(f"✓ Found with {name}! ({len(result)} moves, {self.stats.time_elapsed:.2f}s)")
-                    return result
+                    # ВАЛИДАЦИЯ: проверяем, что решение корректное
+                    if self._validate_solution(board, result):
+                        self.stats.time_elapsed = time.time() - start_time
+                        self.stats.solution_length = len(result)
+                        self._log(f"✓ Found valid solution with {name}! ({len(result)} moves, {self.stats.time_elapsed:.2f}s)")
+                        return result
+                    else:
+                        self._log(f"✗ {name} вернул невалидное решение, продолжаем...")
             except Exception as e:
                 self._log(f"✗ {name} failed: {e}")
         
         self.stats.time_elapsed = time.time() - start_time
         self._log(f"No solution found ({self.stats.time_elapsed:.2f}s)")
         return None
+    
+    def _validate_solution(self, initial_board: BitBoard, solution: List[Tuple[int, int, int]]) -> bool:
+        """Проверяет, что решение валидное (приводит к победному состоянию - 1 колышек)."""
+        try:
+            current_board = initial_board
+            for move in solution:
+                current_board = current_board.apply_move(*move)
+            
+            # Проверяем, что остался ровно 1 колышек (победное состояние)
+            return current_board.peg_count() == 1
+        except Exception as e:
+            self._log(f"Ошибка валидации решения: {e}")
+            return False
