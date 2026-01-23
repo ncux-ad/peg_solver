@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.bitboard import BitBoard, ENGLISH_VALID_POSITIONS, CENTER_POS
 from core.fast import FastBitBoard, USING_CYTHON, get_implementation_info
 from peg_io.cache import save_solution as cache_save_solution
+from peg_io.cache_enhanced import save_solution_enhanced
 from solutions.verify import verify_bitboard_solution, bitboard_to_matrix
 from solvers import (
     DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver,
@@ -339,13 +340,14 @@ def solve_stream():
                             return
 
                         # Сохраняем решение в lookup-базу (если это не LookupSolver)
+                        # Это добавляет доску в "Известные" для быстрого доступа
                         if solver_type != 'lookup':
                             try:
                                 lookup_solver = LookupSolver(use_fallback=False, verbose=False)
                                 lookup_solver.add_solution(board, solution)
-                                print(f"Solution saved to lookup DB: {len(solution)} moves")
+                                print(f"✅ Solution saved to lookup DB: {len(solution)} moves (solver: {solver_used})")
                             except Exception as e:
-                                print(f"Failed to save solution to DB: {e}")
+                                print(f"⚠️ Failed to save solution to lookup DB: {e}")
 
                         # Форматируем решение
                         moves = []
@@ -360,9 +362,17 @@ def solve_stream():
                                 'notation': f"{chr(fc + ord('A'))}{fr + 1} → {chr(tc + ord('A'))}{tr + 1}"
                             })
 
-                        # Пытаемся сохранить решение в общий кэш
+                        # Пытаемся сохранить решение в общий кэш с метаданными
                         try:
                             start_matrix = bitboard_to_matrix(board)
+                            # Используем улучшенный кэш с метаданными
+                            save_solution_enhanced(
+                                start_matrix,
+                                [m['notation'] for m in moves],
+                                solver=solver_used,
+                                time_elapsed=elapsed
+                            )
+                            # Также сохраняем в старый кэш для совместимости
                             cache_save_solution(start_matrix, [m['notation'] for m in moves])
                         except Exception as e:
                             print(f"Failed to save solution to cache: {e}")
@@ -814,14 +824,15 @@ def solve():
         })
 
     # Сохраняем решение в базу для будущего использования
+    # Это добавляет доску в "Известные" для быстрого доступа
     # (только если это не LookupSolver - он сам сохраняет через fallback)
     if solver_type != 'lookup':
         try:
             lookup_solver = LookupSolver(use_fallback=False, verbose=False)
             lookup_solver.add_solution(board, solution)
-            print(f"Solution saved to lookup DB: {len(solution)} moves")
+            print(f"✅ Solution saved to lookup DB: {len(solution)} moves (solver: {solver_type})")
         except Exception as e:
-            print(f"Failed to save solution to DB: {e}")
+            print(f"⚠️ Failed to save solution to lookup DB: {e}")
 
     # Форматируем решение
     moves = []
@@ -836,9 +847,17 @@ def solve():
             'notation': f"{chr(fc + ord('A'))}{fr + 1} → {chr(tc + ord('A'))}{tr + 1}"
         })
 
-    # Пытаемся сохранить решение в общий кэш
+    # Пытаемся сохранить решение в общий кэш с метаданными
     try:
         start_matrix = bitboard_to_matrix(board)
+        # Используем улучшенный кэш с метаданными
+        save_solution_enhanced(
+            start_matrix,
+            [m['notation'] for m in moves],
+            solver=solver_type,
+            time_elapsed=elapsed
+        )
+        # Также сохраняем в старый кэш для совместимости
         cache_save_solution(start_matrix, [m['notation'] for m in moves])
     except Exception as e:
         print(f"Failed to save solution to cache: {e}")
