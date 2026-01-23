@@ -229,6 +229,9 @@ def solve_stream():
         print(f"Stream Brute Force 24h enabled: timeout set to {max_timeout}s")
     print(f"Stream Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
+    # Определяем количество колышков для выбора параметров решателей
+    actual_peg_count = board.peg_count()
+    
     # Создаём queue для передачи событий прогресса
     progress_queue = queue.Queue()
     
@@ -301,7 +304,7 @@ def solve_stream():
                             'dfs_memo': lambda: DFSMemoSolver(use_pagoda=True, verbose=False),
                             'astar_simple': lambda: AStarSimpleSolver(verbose=False),
                             'beam_simple': lambda: BeamSimpleSolver(
-                                beam_width=1000 if peg_count > 20 else 500,
+                                beam_width=1000 if actual_peg_count > 20 else 500,
                                 max_depth=max_depth_unlimited if unlimited else 50,
                                 verbose=False
                             ),
@@ -309,7 +312,7 @@ def solve_stream():
                             'bidirectional_simple': lambda: BidirectionalSimpleSolver(verbose=False),
                             'pattern_astar_simple': lambda: PatternAStarSimpleSolver(use_pattern_db=False, verbose=False),
                             'parallel_simple': lambda: ParallelSimpleSolver(
-                                num_workers=4 if peg_count > 20 else 2,
+                                num_workers=4 if actual_peg_count > 20 else 2,
                                 verbose=False
                             ),
                             'brute_force': lambda: BruteForceSolver(
