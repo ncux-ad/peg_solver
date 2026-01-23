@@ -296,14 +296,22 @@ def solve_stream():
                             'parallel': lambda: ParallelSolver(num_workers=4, verbose=False),
                             'parallel_beam': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, max_depth=max_depth_unlimited, verbose=False),
                             # Новые решатели Фаз 1-3
+                            # Для больших досок (>20 колышков) используем увеличенные параметры
                             'simple_dfs': lambda: SimpleDFSSolver(verbose=False),
-                            'dfs_memo': lambda: DFSMemoSolver(verbose=False),
+                            'dfs_memo': lambda: DFSMemoSolver(use_pagoda=True, verbose=False),
                             'astar_simple': lambda: AStarSimpleSolver(verbose=False),
-                            'beam_simple': lambda: BeamSimpleSolver(beam_width=500, max_depth=50, verbose=False),
+                            'beam_simple': lambda: BeamSimpleSolver(
+                                beam_width=1000 if peg_count > 20 else 500,
+                                max_depth=max_depth_unlimited if unlimited else 50,
+                                verbose=False
+                            ),
                             'ida_simple': lambda: IDASimpleSolver(max_depth=max_depth_unlimited, verbose=False),
                             'bidirectional_simple': lambda: BidirectionalSimpleSolver(verbose=False),
                             'pattern_astar_simple': lambda: PatternAStarSimpleSolver(use_pattern_db=False, verbose=False),
-                            'parallel_simple': lambda: ParallelSimpleSolver(num_workers=4, verbose=False),
+                            'parallel_simple': lambda: ParallelSimpleSolver(
+                                num_workers=4 if peg_count > 20 else 2,
+                                verbose=False
+                            ),
                             'brute_force': lambda: BruteForceSolver(
                                 timeout=max(3600.0, max_timeout),
                                 max_depth=max_depth_unlimited or 50,
