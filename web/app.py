@@ -322,6 +322,7 @@ def solve_stream():
                                 num_workers=get_solver_params()['num_workers'],
                                 verbose=False
                             ),
+                            'backward_simple': lambda: BackwardSimpleSolver(verbose=False),
                             'brute_force': lambda: BruteForceSolver(
                                 timeout=max(3600.0, max_timeout),
                                 max_depth=max_depth_unlimited or 50,
@@ -830,6 +831,7 @@ def solve():
             num_workers=get_solver_params()['num_workers'],
             verbose=False
         ),
+        'backward_simple': lambda: BackwardSimpleSolver(verbose=False),
     }
     
     # По умолчанию используем LookupSolver (быстрее для известных позиций)

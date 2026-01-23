@@ -19,6 +19,7 @@ from .ida_simple import IDASimpleSolver
 from .bidirectional_simple import BidirectionalSimpleSolver
 from .pattern_astar_simple import PatternAStarSimpleSolver
 from .parallel_simple import ParallelSimpleSolver
+from .backward_simple import BackwardSimpleSolver
 from .dfs import DFSSolver
 from .zobrist_dfs import ZobristDFSSolver
 from .astar import AStarSolver, IDAStarSolver
@@ -43,6 +44,7 @@ __all__ = [
     'BidirectionalSimpleSolver',
     'PatternAStarSimpleSolver',
     'ParallelSimpleSolver',
+    'BackwardSimpleSolver',
     'DFSSolver',
     'ZobristDFSSolver',
     'AStarSolver', 
