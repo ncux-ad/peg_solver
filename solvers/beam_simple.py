@@ -9,6 +9,9 @@ from typing import List, Tuple, Optional
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, get_center_position
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count, optimized_is_dead
+)
 from heuristics.basic import heuristic_peg_count, heuristic_distance_to_center
 from heuristics.arbitrary import heuristic_mobility_arbitrary
 from solvers.optimized_utils import evaluate_position_optimized
@@ -73,26 +76,26 @@ class BeamSimpleSolver(BaseSolver):
                 self.stats.nodes_visited += 1
                 self.stats.max_depth = max(self.stats.max_depth, steps)
                 
-                # Проверка победы
-                if current.peg_count() == 1:
+                # Проверка победы (используем оптимизированную версию)
+                if optimized_peg_count(current) == 1:
                     self.stats.solution_length = len(path)
                     self._log(f"Solution found: {len(path)} moves")
                     self._log(f"Stats: {self.stats}")
                     return path
                 
-                # Проверка тупика
-                if current.is_dead():
+                # Проверка тупика (используем оптимизированную версию)
+                if optimized_is_dead(current):
                     self.stats.nodes_pruned += 1
                     continue
                 
-                # Получаем все возможные ходы
-                moves = current.get_moves()
+                # Получаем все возможные ходы (используем оптимизированную версию)
+                moves = optimized_get_moves(current)
                 if not moves:
                     continue
                 
-                # Расширяем состояние
+                # Расширяем состояние (используем оптимизированную версию)
                 for move in moves:
-                    new_board = current.apply_move(*move)
+                    new_board = optimized_apply_move(current, *move)
                     new_key = self._get_key(new_board)
                     
                     # Пропускаем уже посещённые

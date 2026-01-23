@@ -11,6 +11,7 @@ import threading
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard
+from core.optimized_bitboard import optimized_get_moves
 from .simple_dfs import SimpleDFSSolver
 
 
@@ -59,8 +60,8 @@ class ParallelSimpleSolver(BaseSolver):
         self._solution_found.clear()
         self._result = None
         
-        # Получаем все возможные первые ходы
-        moves = board.get_moves()
+        # Получаем все возможные первые ходы (используем оптимизированную версию)
+        moves = optimized_get_moves(board)
         if not moves:
             return None
         

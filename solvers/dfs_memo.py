@@ -9,7 +9,15 @@ from typing import List, Tuple, Optional, Set
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, is_english_board, get_center_position, CENTER_POS
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count, optimized_is_dead
+)
 from heuristics.pagoda import pagoda_value, PAGODA_WEIGHTS
+try:
+    from heuristics.fast_pagoda import pagoda_value_fast, NUMBA_AVAILABLE
+except ImportError:
+    NUMBA_AVAILABLE = False
+    pagoda_value_fast = None
 
 
 class DFSMemoSolver(BaseSolver):
@@ -80,8 +88,8 @@ class DFSMemoSolver(BaseSolver):
         self.stats.nodes_visited += 1
         self.stats.max_depth = max(self.stats.max_depth, len(path))
         
-        # Проверка победы: остался один колышек
-        if board.peg_count() == 1:
+        # Проверка победы: остался один колышек (используем оптимизированную версию)
+        if optimized_peg_count(board) == 1:
             return path
         
         # Проверяем мемо: уже исследовали это состояние?
@@ -93,11 +101,17 @@ class DFSMemoSolver(BaseSolver):
         # Pagoda pruning (только для английской доски)
         if self.use_pagoda and is_english_board(board):
             try:
-                current_pagoda = pagoda_value(board)
+                # Используем оптимизированную версию Pagoda, если доступна
+                if NUMBA_AVAILABLE and pagoda_value_fast:
+                    current_pagoda = pagoda_value_fast(board.pegs)
+                else:
+                    current_pagoda = pagoda_value(board)
+                
                 min_pagoda = min(PAGODA_WEIGHTS.values())
+                peg_count = optimized_peg_count(board)
                 
                 # Мягкая проверка: если pagoda слишком низкая, вероятно тупик
-                if board.peg_count() > 15:
+                if peg_count > 15:
                     # В начале: строгая проверка (финал в центре - английская доска)
                     if current_pagoda < PAGODA_WEIGHTS.get(CENTER_POS, min_pagoda):
                         self.memo.add(key)
@@ -113,8 +127,8 @@ class DFSMemoSolver(BaseSolver):
                 # Если Pagoda не работает, продолжаем без неё
                 pass
         
-        # Получаем все возможные ходы
-        moves = board.get_moves()
+        # Получаем все возможные ходы (используем оптимизированную версию)
+        moves = optimized_get_moves(board)
         
         # Если нет ходов - тупик, запоминаем и возвращаем None
         if not moves:
@@ -125,9 +139,9 @@ class DFSMemoSolver(BaseSolver):
         if self.sort_moves:
             moves = self._sort_moves(board, moves)
         
-        # Пробуем каждый ход
+        # Пробуем каждый ход (используем оптимизированную версию)
         for move in moves:
-            new_board = board.apply_move(*move)
+            new_board = optimized_apply_move(board, *move)
             result = self._dfs(new_board, path + [move])
             if result is not None:
                 return result

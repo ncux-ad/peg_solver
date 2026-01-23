@@ -10,6 +10,9 @@ from collections import deque
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, ENGLISH_GOAL, get_center_position
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count
+)
 
 
 class BidirectionalSimpleSolver(BaseSolver):
@@ -64,7 +67,7 @@ class BidirectionalSimpleSolver(BaseSolver):
                     center_pos = valid_positions[0]
                 target = BitBoard(1 << center_pos, valid_mask=board.valid_mask)
         
-        self._log(f"Starting Bidirectional Search (start={board.peg_count()}, target={target.peg_count()})")
+        self._log(f"Starting Bidirectional Search (start={optimized_peg_count(board)}, target={optimized_peg_count(target)})")
         
         # Прямой поиск: от start к target
         forward_queue = deque([(board, [])])
@@ -135,8 +138,8 @@ class BidirectionalSimpleSolver(BaseSolver):
             return path + reversed_backward
         
         # Расширяем состояние
-        for move in current.get_moves():
-            new_board = current.apply_move(*move)
+        for move in optimized_get_moves(current):
+            new_board = optimized_apply_move(current, *move)
             new_key = self._get_key(new_board)
             
             # Пропускаем уже посещённые
@@ -178,8 +181,8 @@ class BidirectionalSimpleSolver(BaseSolver):
             return forward_path + reversed_path
         
         # Расширяем состояние (обратные ходы)
-        for move in current.get_moves():
-            new_board = current.apply_move(*move)
+        for move in optimized_get_moves(current):
+            new_board = optimized_apply_move(current, *move)
             new_key = self._get_key(new_board)
             
             # Пропускаем уже посещённые

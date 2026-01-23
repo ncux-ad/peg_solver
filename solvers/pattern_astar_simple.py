@@ -10,6 +10,9 @@ from heapq import heappush, heappop
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, is_english_board, get_center_position
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count
+)
 from heuristics.pattern_db import PatternDatabase, get_pattern_db
 
 
@@ -66,7 +69,7 @@ class PatternAStarSimpleSolver(BaseSolver):
             self._log("Pattern Database only works for English board, falling back to simple heuristic")
             self.pattern_db = None
         
-        self._log(f"Starting Pattern A* (pegs={board.peg_count()}, pattern_db={self.pattern_db is not None})")
+        self._log(f"Starting Pattern A* (pegs={optimized_peg_count(board)}, pattern_db={self.pattern_db is not None})")
         
         # Приоритетная очередь: (f_score, counter, steps, board)
         heap = []
@@ -90,24 +93,25 @@ class PatternAStarSimpleSolver(BaseSolver):
             self.stats.nodes_visited += 1
             self.stats.max_depth = max(self.stats.max_depth, g_score)
             
-            # Проверка победы
-            if current.peg_count() == 1:
+            # Проверка победы (используем оптимизированную версию)
+            if optimized_peg_count(current) == 1:
                 path = self._reconstruct_path(visited, current, start_key)
                 self.stats.solution_length = len(path)
                 self._log(f"Solution found: {len(path)} moves")
                 self._log(f"Stats: {self.stats}")
                 return path
             
-            # Проверка тупика
-            if current.is_dead():
+            # Проверка тупика (используем оптимизированную версию)
+            from core.optimized_bitboard import optimized_is_dead
+            if optimized_is_dead(current):
                 self.stats.nodes_pruned += 1
                 continue
             
             current_key = self._get_key(current)
             
-            # Исследуем все возможные ходы
-            for move in current.get_moves():
-                new_board = current.apply_move(*move)
+            # Исследуем все возможные ходы (используем оптимизированную версию)
+            for move in optimized_get_moves(current):
+                new_board = optimized_apply_move(current, *move)
                 new_key = self._get_key(new_board)
                 new_g_score = g_score + 1
                 

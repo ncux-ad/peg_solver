@@ -9,6 +9,9 @@ from typing import List, Tuple, Optional, Set
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, is_english_board, get_center_position
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count, optimized_is_dead
+)
 from heuristics.basic import heuristic_peg_count, heuristic_distance_to_center
 
 
@@ -52,7 +55,7 @@ class IDASimpleSolver(BaseSolver):
         """
         self.stats = SolverStats()
         
-        self._log(f"Starting IDA* (pegs={board.peg_count()}, max_depth={self.max_depth})")
+        self._log(f"Starting IDA* (pegs={optimized_peg_count(board)}, max_depth={self.max_depth})")
         
         # Начальный bound = эвристика начальной позиции
         bound = self._heuristic(board)
@@ -106,8 +109,8 @@ class IDASimpleSolver(BaseSolver):
         if f_score > bound:
             return None, f_score
         
-        # Проверка победы
-        if board.peg_count() == 1:
+        # Проверка победы (используем оптимизированную версию)
+        if optimized_peg_count(board) == 1:
             return path, f_score
         
         # Проверка на циклы (в рамках текущей итерации)
@@ -116,8 +119,8 @@ class IDASimpleSolver(BaseSolver):
             return None, float('inf')
         visited.add(key)
         
-        # Получаем все возможные ходы
-        moves = board.get_moves()
+        # Получаем все возможные ходы (используем оптимизированную версию)
+        moves = optimized_get_moves(board)
         if not moves:
             return None, float('inf')
         
@@ -128,7 +131,7 @@ class IDASimpleSolver(BaseSolver):
         min_threshold = float('inf')
         
         for move in moves:
-            new_board = board.apply_move(*move)
+            new_board = optimized_apply_move(board, *move)
             result, threshold = self._search(
                 new_board, g_score + 1, bound, path + [move], visited
             )

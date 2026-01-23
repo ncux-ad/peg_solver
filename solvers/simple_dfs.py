@@ -9,6 +9,9 @@ from typing import List, Tuple, Optional
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count
+)
 
 
 class SimpleDFSSolver(BaseSolver):
@@ -64,20 +67,20 @@ class SimpleDFSSolver(BaseSolver):
         self.stats.nodes_visited += 1
         self.stats.max_depth = max(self.stats.max_depth, len(path))
         
-        # Проверка победы: остался один колышек
-        if board.peg_count() == 1:
+        # Проверка победы: остался один колышек (используем оптимизированную версию)
+        if optimized_peg_count(board) == 1:
             return path
         
-        # Получаем все возможные ходы
-        moves = board.get_moves()
+        # Получаем все возможные ходы (используем оптимизированную версию)
+        moves = optimized_get_moves(board)
         
         # Если нет ходов - тупик
         if not moves:
             return None
         
-        # Пробуем каждый ход
+        # Пробуем каждый ход (используем оптимизированную версию)
         for move in moves:
-            new_board = board.apply_move(*move)
+            new_board = optimized_apply_move(board, *move)
             result = self._dfs(new_board, path + [move])
             if result is not None:
                 return result

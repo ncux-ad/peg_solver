@@ -10,6 +10,9 @@ from heapq import heappush, heappop
 
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, is_english_board, get_center_position
+from core.optimized_bitboard import (
+    optimized_get_moves, optimized_apply_move, optimized_peg_count, optimized_is_dead
+)
 from heuristics.basic import heuristic_peg_count, heuristic_distance_to_center
 
 
@@ -76,8 +79,8 @@ class AStarSimpleSolver(BaseSolver):
             self.stats.nodes_visited += 1
             self.stats.max_depth = max(self.stats.max_depth, g_score)
             
-            # Проверка победы
-            if current.peg_count() == 1:
+            # Проверка победы (используем оптимизированную версию)
+            if optimized_peg_count(current) == 1:
                 # Восстанавливаем путь
                 path = self._reconstruct_path(visited, current, start_key)
                 self.stats.solution_length = len(path)
@@ -85,8 +88,8 @@ class AStarSimpleSolver(BaseSolver):
                 self._log(f"Stats: {self.stats}")
                 return path
             
-            # Проверка тупика
-            if current.is_dead():
+            # Проверка тупика (используем оптимизированную версию)
+            if optimized_is_dead(current):
                 self.stats.nodes_pruned += 1
                 continue
             
@@ -95,9 +98,9 @@ class AStarSimpleSolver(BaseSolver):
             # Проверяем, не посещали ли мы это состояние с лучшим g_score
             # (но это уже проверено при добавлении в heap, так что пропускаем)
             
-            # Исследуем все возможные ходы
-            for move in current.get_moves():
-                new_board = current.apply_move(*move)
+            # Исследуем все возможные ходы (используем оптимизированную версию)
+            for move in optimized_get_moves(current):
+                new_board = optimized_apply_move(current, *move)
                 new_key = self._get_key(new_board)
                 new_g_score = g_score + 1
                 
