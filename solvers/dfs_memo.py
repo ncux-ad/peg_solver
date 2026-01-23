@@ -8,7 +8,8 @@ DFS с мемоизацией - Фаза 2.1.
 from typing import List, Tuple, Optional, Set
 
 from .base import BaseSolver, SolverStats
-from core.bitboard import BitBoard, is_english_board, get_center_position
+from core.bitboard import BitBoard, is_english_board, get_center_position, CENTER_POS
+from heuristics.pagoda import pagoda_value, PAGODA_WEIGHTS
 
 
 class DFSMemoSolver(BaseSolver):
@@ -26,16 +27,18 @@ class DFSMemoSolver(BaseSolver):
     - Значительно ускоряет поиск на сложных позициях
     """
     
-    def __init__(self, use_symmetry: bool = True, sort_moves: bool = True, 
-                 verbose: bool = False):
+    def __init__(self, use_symmetry: bool = True, sort_moves: bool = True,
+                 use_pagoda: bool = True, verbose: bool = False):
         """
         Args:
             use_symmetry: использовать канонические формы для мемоизации
             sort_moves: сортировать ходы по эвристике (ближе к центру = лучше)
+            use_pagoda: использовать Pagoda pruning (только для английской доски)
             verbose: выводить отладочную информацию
         """
         super().__init__(use_symmetry=use_symmetry, verbose=verbose)
         self.sort_moves = sort_moves
+        self.use_pagoda = use_pagoda
         self.memo: Set[int] = set()
     
     def solve(self, board: BitBoard) -> Optional[List[Tuple[int, int, int]]]:
@@ -86,6 +89,29 @@ class DFSMemoSolver(BaseSolver):
         if key in self.memo:
             self.stats.nodes_pruned += 1
             return None
+        
+        # Pagoda pruning (только для английской доски)
+        if self.use_pagoda and is_english_board(board):
+            try:
+                current_pagoda = pagoda_value(board)
+                min_pagoda = min(PAGODA_WEIGHTS.values())
+                
+                # Мягкая проверка: если pagoda слишком низкая, вероятно тупик
+                if board.peg_count() > 15:
+                    # В начале: строгая проверка (финал в центре - английская доска)
+                    if current_pagoda < PAGODA_WEIGHTS.get(CENTER_POS, min_pagoda):
+                        self.memo.add(key)
+                        self.stats.nodes_pruned += 1
+                        return None
+                else:
+                    # Ближе к концу: мягкая проверка (финал может быть где угодно)
+                    if current_pagoda < min_pagoda:
+                        self.memo.add(key)
+                        self.stats.nodes_pruned += 1
+                        return None
+            except Exception:
+                # Если Pagoda не работает, продолжаем без неё
+                pass
         
         # Получаем все возможные ходы
         moves = board.get_moves()

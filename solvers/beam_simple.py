@@ -10,6 +10,8 @@ from typing import List, Tuple, Optional
 from .base import BaseSolver, SolverStats
 from core.bitboard import BitBoard, get_center_position
 from heuristics.basic import heuristic_peg_count, heuristic_distance_to_center
+from heuristics.arbitrary import heuristic_mobility_arbitrary
+from solvers.optimized_utils import evaluate_position_optimized
 
 
 class BeamSimpleSolver(BaseSolver):
@@ -29,16 +31,18 @@ class BeamSimpleSolver(BaseSolver):
     5. Повторяем пока не найдём решение или не исчерпаем beam
     """
     
-    def __init__(self, beam_width: int = 100, use_symmetry: bool = True, 
-                 verbose: bool = False):
+    def __init__(self, beam_width: int = 100, max_depth: int = 50,
+                 use_symmetry: bool = True, verbose: bool = False):
         """
         Args:
             beam_width: ширина луча (количество состояний на уровне)
+            max_depth: максимальная глубина поиска
             use_symmetry: использовать канонические формы
             verbose: выводить отладочную информацию
         """
         super().__init__(use_symmetry=use_symmetry, verbose=verbose)
         self.beam_width = beam_width
+        self.max_depth = max_depth
     
     def solve(self, board: BitBoard) -> Optional[List[Tuple[int, int, int]]]:
         """
@@ -52,17 +56,17 @@ class BeamSimpleSolver(BaseSolver):
         """
         self.stats = SolverStats()
         
-        self._log(f"Starting Beam Search (pegs={board.peg_count()}, beam_width={self.beam_width})")
+        self._log(f"Starting Beam Search (pegs={board.peg_count()}, beam_width={self.beam_width}, max_depth={self.max_depth})")
         
         # Beam: список (score, steps, board, path)
         beam = [(self._evaluate(board), 0, board, [])]
         visited = set()
         
-        max_iterations = 1000  # Защита от бесконечного цикла
-        iteration = 0
-        
-        while beam and iteration < max_iterations:
-            iteration += 1
+        for depth in range(self.max_depth):
+            if not beam:
+                break
+            
+            self.stats.max_depth = depth
             new_beam = []
             
             for score, steps, current, path in beam:
@@ -97,7 +101,13 @@ class BeamSimpleSolver(BaseSolver):
                     
                     visited.add(new_key)
                     new_path = path + [move]
-                    new_score = self._evaluate(new_board)
+                    # Используем оптимизированную оценку если доступна
+                    try:
+                        num_moves = len(new_board.get_moves())
+                        new_score = evaluate_position_optimized(new_board, num_moves)
+                    except Exception:
+                        # Fallback на простую оценку
+                        new_score = self._evaluate(new_board)
                     new_steps = steps + 1
                     
                     new_beam.append((new_score, new_steps, new_board, new_path))
@@ -106,8 +116,8 @@ class BeamSimpleSolver(BaseSolver):
             new_beam.sort(key=lambda x: x[0])  # Сортируем по score (меньше = лучше)
             beam = new_beam[:self.beam_width]
             
-            if not beam:
-                break
+            if depth % 5 == 0:
+                self._log(f"Depth {depth}, beam: {len(beam)}")
         
         self._log("No solution found (beam exhausted)")
         self._log(f"Stats: {self.stats}")
@@ -132,5 +142,9 @@ class BeamSimpleSolver(BaseSolver):
             dist = heuristic_distance_to_center(board,
                 center=(center_pos // 7, center_pos % 7))
             score += dist * 0.1
+        
+        # Мобильность (больше ходов = лучше, поэтому вычитаем)
+        mobility = heuristic_mobility_arbitrary(board)
+        score -= mobility * 0.5
         
         return score

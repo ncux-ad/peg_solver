@@ -299,7 +299,7 @@ def solve_stream():
                             'simple_dfs': lambda: SimpleDFSSolver(verbose=False),
                             'dfs_memo': lambda: DFSMemoSolver(verbose=False),
                             'astar_simple': lambda: AStarSimpleSolver(verbose=False),
-                            'beam_simple': lambda: BeamSimpleSolver(beam_width=100, verbose=False),
+                            'beam_simple': lambda: BeamSimpleSolver(beam_width=500, max_depth=50, verbose=False),
                             'ida_simple': lambda: IDASimpleSolver(max_depth=max_depth_unlimited, verbose=False),
                             'bidirectional_simple': lambda: BidirectionalSimpleSolver(verbose=False),
                             'pattern_astar_simple': lambda: PatternAStarSimpleSolver(use_pattern_db=False, verbose=False),
