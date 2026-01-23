@@ -25,7 +25,11 @@ from solvers import (
     DFSSolver, BeamSolver, HybridSolver, GovernorSolver, LookupSolver,
     ParallelBeamSolver, ParallelSolver, AStarSolver, IDAStarSolver,
     PatternAStarSolver, ZobristDFSSolver, BidirectionalSolver, SequentialSolver,
-    ExhaustiveSolver, BruteForceSolver
+    ExhaustiveSolver, BruteForceSolver,
+    # Новые решатели Фаз 1-3
+    SimpleDFSSolver, DFSMemoSolver, AStarSimpleSolver, BeamSimpleSolver,
+    IDASimpleSolver, BidirectionalSimpleSolver, PatternAStarSimpleSolver,
+    ParallelSimpleSolver
 )
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
@@ -290,6 +294,15 @@ def solve_stream():
                             ),
                             'parallel': lambda: ParallelSolver(num_workers=4, verbose=False),
                             'parallel_beam': lambda: ParallelBeamSolver(beam_width=500, num_workers=4, max_depth=max_depth_unlimited, verbose=False),
+                            # Новые решатели Фаз 1-3
+                            'simple_dfs': lambda: SimpleDFSSolver(verbose=False),
+                            'dfs_memo': lambda: DFSMemoSolver(verbose=False),
+                            'astar_simple': lambda: AStarSimpleSolver(verbose=False),
+                            'beam_simple': lambda: BeamSimpleSolver(beam_width=100, verbose=False),
+                            'ida_simple': lambda: IDASimpleSolver(max_depth=max_depth_unlimited, verbose=False),
+                            'bidirectional_simple': lambda: BidirectionalSimpleSolver(verbose=False),
+                            'pattern_astar_simple': lambda: PatternAStarSimpleSolver(use_pattern_db=False, verbose=False),
+                            'parallel_simple': lambda: ParallelSimpleSolver(num_workers=4, verbose=False),
                             'brute_force': lambda: BruteForceSolver(
                                 timeout=max(3600.0, max_timeout),
                                 max_depth=max_depth_unlimited or 50,
