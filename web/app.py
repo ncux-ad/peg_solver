@@ -30,7 +30,7 @@ from solvers import (
     # Новые решатели Фаз 1-3
     SimpleDFSSolver, DFSMemoSolver, AStarSimpleSolver, BeamSimpleSolver,
     IDASimpleSolver, BidirectionalSimpleSolver, PatternAStarSimpleSolver,
-    ParallelSimpleSolver
+    ParallelSimpleSolver, BackwardSimpleSolver
 )
 from heuristics import pagoda_value, PAGODA_WEIGHTS
 
