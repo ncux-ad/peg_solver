@@ -232,6 +232,13 @@ def solve_stream():
     # Определяем количество колышков для выбора параметров решателей
     actual_peg_count = board.peg_count()
     
+    # Замыкание для доступа к actual_peg_count в lambda функциях
+    def get_solver_params():
+        return {
+            'beam_width': 1000 if actual_peg_count > 20 else 500,
+            'num_workers': 4 if actual_peg_count > 20 else 2
+        }
+    
     # Создаём queue для передачи событий прогресса
     progress_queue = queue.Queue()
     
@@ -304,7 +311,7 @@ def solve_stream():
                             'dfs_memo': lambda: DFSMemoSolver(use_pagoda=True, verbose=False),
                             'astar_simple': lambda: AStarSimpleSolver(verbose=False),
                             'beam_simple': lambda: BeamSimpleSolver(
-                                beam_width=1000 if actual_peg_count > 20 else 500,
+                                beam_width=get_solver_params()['beam_width'],
                                 max_depth=max_depth_unlimited if unlimited else 50,
                                 verbose=False
                             ),
@@ -312,7 +319,7 @@ def solve_stream():
                             'bidirectional_simple': lambda: BidirectionalSimpleSolver(verbose=False),
                             'pattern_astar_simple': lambda: PatternAStarSimpleSolver(use_pattern_db=False, verbose=False),
                             'parallel_simple': lambda: ParallelSimpleSolver(
-                                num_workers=4 if actual_peg_count > 20 else 2,
+                                num_workers=get_solver_params()['num_workers'],
                                 verbose=False
                             ),
                             'brute_force': lambda: BruteForceSolver(
@@ -743,6 +750,16 @@ def solve():
         print(f"Brute Force 24h enabled: timeout set to {max_timeout}s")
     print(f"Limits: timeout={max_timeout}, depth={max_depth_unlimited}, iterations={max_iterations_unlimited}")
     
+    # Определяем количество колышков для выбора параметров решателей
+    actual_peg_count = board.peg_count()
+    
+    # Замыкание для доступа к actual_peg_count в lambda функциях
+    def get_solver_params():
+        return {
+            'beam_width': 1000 if actual_peg_count > 20 else 500,
+            'num_workers': 4 if actual_peg_count > 20 else 2
+        }
+    
     solvers = {
         'lookup': lambda: LookupSolver(use_fallback=False, verbose=False),  # Только lookup table, без fallback
         'sequential': lambda: SequentialSolver(
@@ -797,6 +814,22 @@ def solve():
             use_memoization=False,  # Отключаем мемоизацию для полного перебора (может пропускать решения)
             full_board=is_generic_board  # Включаем произвольную доску 7x7, если есть позиции вне английского креста
         ),  # Полный перебор БЕЗ Pagoda pruning и БЕЗ мемоизации (последняя попытка)
+        # Новые решатели Фаз 1-3
+        'simple_dfs': lambda: SimpleDFSSolver(verbose=False),
+        'dfs_memo': lambda: DFSMemoSolver(use_pagoda=True, verbose=False),
+        'astar_simple': lambda: AStarSimpleSolver(verbose=False),
+        'beam_simple': lambda: BeamSimpleSolver(
+            beam_width=get_solver_params()['beam_width'],
+            max_depth=max_depth_unlimited if unlimited else 50,
+            verbose=False
+        ),
+        'ida_simple': lambda: IDASimpleSolver(max_depth=max_depth_unlimited, verbose=False),
+        'bidirectional_simple': lambda: BidirectionalSimpleSolver(verbose=False),
+        'pattern_astar_simple': lambda: PatternAStarSimpleSolver(use_pattern_db=False, verbose=False),
+        'parallel_simple': lambda: ParallelSimpleSolver(
+            num_workers=get_solver_params()['num_workers'],
+            verbose=False
+        ),
     }
     
     # По умолчанию используем LookupSolver (быстрее для известных позиций)
