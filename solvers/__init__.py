@@ -15,6 +15,10 @@ from .simple_dfs import SimpleDFSSolver
 from .dfs_memo import DFSMemoSolver
 from .astar_simple import AStarSimpleSolver
 from .beam_simple import BeamSimpleSolver
+from .ida_simple import IDASimpleSolver
+from .bidirectional_simple import BidirectionalSimpleSolver
+from .pattern_astar_simple import PatternAStarSimpleSolver
+from .parallel_simple import ParallelSimpleSolver
 from .dfs import DFSSolver
 from .zobrist_dfs import ZobristDFSSolver
 from .astar import AStarSolver, IDAStarSolver
@@ -35,6 +39,10 @@ __all__ = [
     'DFSMemoSolver',
     'AStarSimpleSolver',
     'BeamSimpleSolver',
+    'IDASimpleSolver',
+    'BidirectionalSimpleSolver',
+    'PatternAStarSimpleSolver',
+    'ParallelSimpleSolver',
     'DFSSolver',
     'ZobristDFSSolver',
     'AStarSolver', 
